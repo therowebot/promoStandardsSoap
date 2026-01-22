@@ -2,22 +2,20 @@ require('dotenv').config();
 const PromoStandards = require('../src/index');
 
 // Load HIT credentials from .env
-// Create a .env file with:
-//   HIT_VENDOR_CODE=your_hit_code
-//   HIT_USERNAME=your_username
-//   HIT_PASSWORD=your_password
 const hit = {
-  code: process.env.HIT_VENDOR_CODE,
-  username: process.env.HIT_USERNAME,
-  password: process.env.HIT_PASSWORD
+  code: process.env.hitCode,
+  username: process.env.hitUserName,
+  password: process.env.hitPassword
 };
+
+const oneSourceKey = process.env.oneSourceKey;
 
 // Example 1: Basic usage with HIT
 async function basicExample() {
   console.log('=== Basic Usage ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}
+    onesource: { apiKey: oneSourceKey }
   });
 
   try {
@@ -39,7 +37,7 @@ async function productDataExample() {
   console.log('\n=== Product Data ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}
+    onesource: { apiKey: oneSourceKey }
   });
 
   try {
@@ -63,7 +61,7 @@ async function multiServiceExample() {
   console.log('\n=== Multi-Service Usage ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}
+    onesource: { apiKey: oneSourceKey }
   });
 
   const creds = { username: hit.username, password: hit.password };
@@ -109,7 +107,7 @@ async function quickCallExample() {
       supplierId: hit.code,
       username: hit.username,
       password: hit.password,
-      onesource: {},
+      onesource: { apiKey: oneSourceKey },
       data: {
         productId: 'XYZ789'
       }
@@ -126,7 +124,7 @@ async function errorHandlingExample() {
   console.log('\n=== Error Handling Example ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}
+    onesource: { apiKey: oneSourceKey }
   });
 
   // Test: Missing credentials
@@ -165,7 +163,7 @@ async function directWsdlExample() {
   console.log('\n=== Direct WSDL Usage ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}
+    onesource: { apiKey: oneSourceKey }
   });
 
   try {
@@ -189,9 +187,10 @@ async function runExamples() {
 
   if (!hit.code || !hit.username || !hit.password) {
     console.log('Please create a .env file with HIT credentials:');
-    console.log('  HIT_VENDOR_CODE=your_hit_code');
-    console.log('  HIT_USERNAME=your_username');
-    console.log('  HIT_PASSWORD=your_password\n');
+    console.log('  hitCode=HIT');
+    console.log('  hitUserName=your_username');
+    console.log('  hitPassword=your_password');
+    console.log('  oneSourceKey=your_onesource_key\n');
     return;
   }
 
