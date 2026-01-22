@@ -121,29 +121,33 @@ class ProductDataService extends BaseService {
 
   static responseValidators = {
     getProduct: (response) => {
-      if (!response.Product && !response.product) {
-        throw new Error('Invalid response: missing Product data');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.product) {
+        throw new Error('Invalid response: missing product data');
       }
       return response;
     },
-    
+
     getProductDateModified: (response) => {
-      if (!response.ProductDateModifiedArray && !response.productDateModifiedArray) {
-        throw new Error('Invalid response: missing ProductDateModifiedArray');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.productDateModifiedArray) {
+        throw new Error('Invalid response: missing productDateModifiedArray');
       }
       return response;
     },
-    
+
     getProductSellable: (response) => {
-      if (!response.ProductSellableArray && !response.productSellableArray) {
-        throw new Error('Invalid response: missing ProductSellableArray');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.productSellableArray) {
+        throw new Error('Invalid response: missing productSellableArray');
       }
       return response;
     },
-    
+
     getProductCloseOut: (response) => {
-      if (!response.ProductCloseOutArray && !response.productCloseOutArray) {
-        throw new Error('Invalid response: missing ProductCloseOutArray');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.productCloseOutArray) {
+        throw new Error('Invalid response: missing productCloseOutArray');
       }
       return response;
     }

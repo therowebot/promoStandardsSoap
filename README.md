@@ -49,15 +49,37 @@ console.log(result); // JSON response
 |---------|----------|--------|
 | Inventory Service | 1.2.1, 2.0.0 | ✅ Implemented |
 | Product Data | 1.0.0, 2.0.0 | ✅ Implemented |
-| Invoice | 1.0.0 | 🚧 In Progress |
-| Order Status | 1.0.0, 2.0.0 | 🚧 In Progress |
-| Order Shipment Notification | 1.0.0, 2.0.0, 2.1.0 | 🚧 In Progress |
-| Purchase Order | 1.0.0 | 🚧 In Progress |
-| Pricing & Configuration | 1.0.0 | 🚧 In Progress |
-| Product Media | 1.1.0 | 🚧 In Progress |
-| Product Compliance | 1.0.0 | 🚧 In Progress |
-| Company Data | 1.0.0 | 🚧 In Progress |
-| Remittance Advice | 1.0.0 | 🚧 In Progress |
+| Order Status | 1.0.0, 2.0.0 | ✅ Implemented |
+| Order Shipment Notification | 1.0.0, 2.0.0, 2.1.0 | ✅ Implemented |
+| Invoice | 1.0.0 | ✅ Implemented |
+| Pricing & Configuration | 1.0.0, 2.0.0 | ✅ Implemented |
+| Product Media | 1.0.0, 1.1.0 | ✅ Implemented |
+| Purchase Order | 1.0.0, 2.0.0 | ✅ Implemented |
+| Product Compliance | 1.0.0 | ✅ Implemented |
+| Company Data | 1.0.0 | ✅ Implemented |
+| Remittance Advice | 1.0.0 | ✅ Implemented |
+
+## OneSource Integration
+
+The library supports automatic endpoint discovery via OneSource:
+
+```javascript
+const { PromoStandardsClient } = require('promostandards');
+
+const client = new PromoStandardsClient({
+  username: 'myuser',
+  password: 'mypass',
+  onesource: {
+    apiUrl: 'https://services.promostandards.org/WebServiceRepository/WebServiceRepository.svc'
+  }
+});
+
+// Discover and use a supplier's services automatically
+const supplier = await client.useSupplier('SanMar');
+const inventory = await supplier.inventory.getInventoryLevels({
+  productId: 'ABC123'
+});
+```
 
 ## Usage Examples
 

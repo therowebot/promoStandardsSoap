@@ -106,10 +106,8 @@ class XmlConverter {
   }
 
   toXmlCase(key) {
-    const capitalized = key.charAt(0).toUpperCase() + key.slice(1);
-    return capitalized.replace(/[A-Z]/g, (match, offset) => 
-      offset > 0 ? match : match
-    );
+    // Convert camelCase to PascalCase (first letter uppercase)
+    return key.charAt(0).toUpperCase() + key.slice(1);
   }
 
   extractSoapBody(jsonResponse) {

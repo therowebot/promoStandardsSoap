@@ -59,43 +59,212 @@ class SoapClient {
   async call(operation, requestData, options = {}) {
     await this.initialize();
 
-    const operationMethod = this._client[operation];
-    if (!operationMethod) {
-      throw new PromoStandardsError(
-        `Operation '${operation}' not found in WSDL`,
-        'INVALID_OPERATION',
-        { operation, availableOperations: Object.keys(this._client).filter(k => typeof this._client[k] === 'function') }
-      );
-    }
+    // PromoStandards uses PascalCase element names (GetInventoryLevelsRequest)
+    // but the soap library generates camelCase (getInventoryLevelsRequest)
+    // So we use raw XML requests to ensure correct element names
 
     try {
       debug(`Calling operation: ${operation}`, requestData);
-      
-      const xmlRequest = this.xmlConverter.prepareJsonForXml(requestData);
-      
-      const [result, rawResponse, soapHeader, rawRequest] = await operationMethod.call(
-        this._client,
-        xmlRequest,
-        options.soapOptions
-      );
 
-      debug('Raw SOAP response received');
-      
-      const normalizedResult = this.xmlConverter.normalizeJsonResponse(result);
-      
+      const namespace = await this.getNamespace();
+      const endpoint = this.getEndpoint();
+
+      // Build the request element name (PascalCase + Request suffix)
+      const requestElementName = this.toPascalCase(operation) + 'Request';
+
+      // Build the XML body with proper namespacing
+      const xmlBody = this.buildRequestXml(requestData, requestElementName, namespace);
+
+      // Build full SOAP envelope
+      const soapEnvelope = this.buildSoapEnvelope(xmlBody, namespace);
+
+      debug('SOAP Request:', soapEnvelope);
+
+      // Send the request
+      const response = await this.httpClient.post(endpoint, soapEnvelope, {
+        headers: {
+          'SOAPAction': operation
+        }
+      });
+
+      debug('SOAP Response received');
+
+      // Parse the response
+      const jsonResponse = await this.xmlConverter.xmlToJson(response.data);
+      const bodyContent = this.extractSoapBody(jsonResponse);
+      const normalizedResult = this.xmlConverter.normalizeJsonResponse(bodyContent);
+
       if (options.includeRaw) {
         return {
           result: normalizedResult,
-          rawResponse,
-          rawRequest,
-          soapHeader
+          rawResponse: response.data,
+          rawRequest: soapEnvelope
         };
       }
 
       return normalizedResult;
     } catch (error) {
+      if (error.response?.data) {
+        // Try to parse SOAP fault from response
+        try {
+          const faultJson = await this.xmlConverter.xmlToJson(error.response.data);
+          const fault = this.extractSoapFault(faultJson);
+          if (fault) {
+            throw new PromoStandardsError(
+              fault.faultstring || fault.message || 'SOAP Fault',
+              fault.faultcode || 'SOAP_FAULT',
+              { operation, detail: fault.detail }
+            );
+          }
+        } catch (parseError) {
+          // If we can't parse the fault, throw the original error
+        }
+      }
       this.handleSoapError(error, operation);
     }
+  }
+
+  /**
+   * Build XML for request data
+   */
+  buildRequestXml(data, elementName, namespace) {
+    const nsPrefix = 'ns';
+    let xml = `<${nsPrefix}:${elementName} xmlns:${nsPrefix}="${namespace}">`;
+
+    for (const [key, value] of Object.entries(data)) {
+      xml += this.valueToXml(key, value, nsPrefix);
+    }
+
+    xml += `</${nsPrefix}:${elementName}>`;
+    return xml;
+  }
+
+  /**
+   * Convert a value to XML
+   */
+  valueToXml(key, value, nsPrefix) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+
+    const tagName = key;
+
+    if (Array.isArray(value)) {
+      return value.map(v => this.valueToXml(key, v, nsPrefix)).join('');
+    }
+
+    if (typeof value === 'object') {
+      let xml = `<${nsPrefix}:${tagName}>`;
+      for (const [k, v] of Object.entries(value)) {
+        xml += this.valueToXml(k, v, nsPrefix);
+      }
+      xml += `</${nsPrefix}:${tagName}>`;
+      return xml;
+    }
+
+    // Escape XML special characters
+    const escaped = String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    return `<${nsPrefix}:${tagName}>${escaped}</${nsPrefix}:${tagName}>`;
+  }
+
+  /**
+   * Build a complete SOAP envelope
+   */
+  buildSoapEnvelope(body, namespace) {
+    return `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>${body}</soap:Body>
+</soap:Envelope>`;
+  }
+
+  /**
+   * Extract the body content from a parsed SOAP response
+   */
+  extractSoapBody(json) {
+    // Handle various response structures
+    const envelope = json['soap:Envelope'] || json['SOAP-ENV:Envelope'] || json['soapenv:Envelope'] || json.Envelope;
+    if (!envelope) {
+      return json;
+    }
+
+    const body = envelope['soap:Body'] || envelope['SOAP-ENV:Body'] || envelope['soapenv:Body'] || envelope.Body;
+    if (!body) {
+      return envelope;
+    }
+
+    // Return the first child element of Body (the response element)
+    const keys = Object.keys(body).filter(k => !k.startsWith('$'));
+    if (keys.length > 0) {
+      return body[keys[0]];
+    }
+
+    return body;
+  }
+
+  /**
+   * Extract SOAP fault from response
+   */
+  extractSoapFault(json) {
+    try {
+      const envelope = json['soap:Envelope'] || json['SOAP-ENV:Envelope'] || json['soapenv:Envelope'] || json.Envelope;
+      const body = envelope?.['soap:Body'] || envelope?.['SOAP-ENV:Body'] || envelope?.['soapenv:Body'] || envelope?.Body;
+      const fault = body?.['soap:Fault'] || body?.['SOAP-ENV:Fault'] || body?.Fault;
+      return fault;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Get the SOAP endpoint URL
+   */
+  getEndpoint() {
+    if (this.endpoint) {
+      return this.endpoint;
+    }
+
+    // Extract endpoint from WSDL if available
+    if (this._client) {
+      try {
+        const wsdl = this._client.wsdl;
+        for (const service in wsdl.services) {
+          for (const port in wsdl.services[service].ports) {
+            const address = wsdl.services[service].ports[port].location;
+            if (address) {
+              return address;
+            }
+          }
+        }
+      } catch (e) {
+        debug('Error getting endpoint from WSDL:', e.message);
+      }
+    }
+
+    // Fallback: use WSDL URL without query string
+    return this.wsdl.split('?')[0];
+  }
+
+  /**
+   * Convert camelCase to PascalCase
+   */
+  toPascalCase(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  /**
+   * Get operation names from the client (without Async suffix)
+   */
+  getOperationNames() {
+    if (!this._client) return [];
+    return Object.keys(this._client)
+      .filter(k => typeof this._client[k] === 'function' && !k.endsWith('Async'))
+      .filter(k => !['setEndpoint', 'setSecurity', 'addSoapHeader', 'describe'].includes(k));
   }
 
   async callWithDirectXml(operation, xmlBody, soapAction) {
@@ -127,26 +296,67 @@ class SoapClient {
 
   async getAvailableOperations() {
     await this.initialize();
-    
+
     const operations = [];
     const client = this._client;
-    
-    for (const service in client.wsdl.services) {
-      for (const port in client.wsdl.services[service].ports) {
-        const binding = client.wsdl.services[service].ports[port].binding;
-        
-        for (const operation in binding.operations) {
-          operations.push({
-            name: operation,
-            service,
-            port,
-            input: binding.operations[operation].input,
-            output: binding.operations[operation].output
-          });
+    const wsdl = client.wsdl;
+
+    // Try multiple approaches to find operations
+    // Method 1: Standard services structure
+    if (wsdl.services) {
+      for (const service in wsdl.services) {
+        const serviceObj = wsdl.services[service];
+        if (serviceObj.ports) {
+          for (const port in serviceObj.ports) {
+            const portObj = serviceObj.ports[port];
+            if (portObj.binding && portObj.binding.operations) {
+              for (const operation in portObj.binding.operations) {
+                operations.push({
+                  name: operation,
+                  service,
+                  port,
+                  input: portObj.binding.operations[operation].input,
+                  output: portObj.binding.operations[operation].output
+                });
+              }
+            }
+          }
         }
       }
     }
-    
+
+    // Method 2: Use client.describe() which gives a cleaner structure
+    if (operations.length === 0) {
+      try {
+        const description = client.describe();
+        for (const serviceName in description) {
+          const service = description[serviceName];
+          for (const portName in service) {
+            const port = service[portName];
+            for (const opName in port) {
+              operations.push({
+                name: opName,
+                service: serviceName,
+                port: portName,
+                input: port[opName].input,
+                output: port[opName].output
+              });
+            }
+          }
+        }
+      } catch (e) {
+        debug('Error using describe():', e.message);
+      }
+    }
+
+    // Method 3: Get operations directly from client object
+    if (operations.length === 0) {
+      const opNames = this.getOperationNames();
+      for (const name of opNames) {
+        operations.push({ name, service: 'unknown', port: 'unknown' });
+      }
+    }
+
     return operations;
   }
 

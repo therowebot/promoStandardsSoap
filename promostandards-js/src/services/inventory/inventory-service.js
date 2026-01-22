@@ -8,18 +8,12 @@ class InventoryService extends BaseService {
 
   constructor(options = {}) {
     super(options);
-    
-    if (this.version === '1.2.1') {
-      this.operations = {
-        getFilterValues: 'getFilterValues',
-        getInventoryLevels: 'getInventoryLevels'
-      };
-    } else {
-      this.operations = {
-        getFilterValues: 'getFilterValues',
-        getInventoryLevels: 'getInventoryLevels'
-      };
-    }
+
+    // Operations are the same for both versions
+    this.operations = {
+      getFilterValues: 'getFilterValues',
+      getInventoryLevels: 'getInventoryLevels'
+    };
   }
 
   async getInventoryLevels(params = {}) {
@@ -154,15 +148,17 @@ class InventoryService extends BaseService {
 
   static responseValidators = {
     getInventoryLevels: (response) => {
-      if (!response.Inventory && !response.inventory) {
-        throw new Error('Invalid response: missing Inventory data');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.inventory && !response.inventoryLevels) {
+        throw new Error('Invalid response: missing inventory data');
       }
       return response;
     },
-    
+
     getFilterValues: (response) => {
-      if (!response.FilterValues && !response.filterValues) {
-        throw new Error('Invalid response: missing FilterValues');
+      // After normalizeJsonResponse, all keys are camelCase
+      if (!response.filterValues) {
+        throw new Error('Invalid response: missing filterValues');
       }
       return response;
     }
