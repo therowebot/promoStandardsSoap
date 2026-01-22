@@ -1,90 +1,129 @@
 const PromoStandards = require('../src/index');
 
-// Example 1: Direct service usage
-async function directServiceExample() {
-  console.log('=== Direct Service Usage ===\n');
+// Example 1: Basic usage with per-vendor credentials
+async function basicExample() {
+  console.log('=== Basic Usage ===\n');
 
-  // Create an inventory service instance
-  // Version defaults to newest (2.0.0) if not specified
-  const inventory = new PromoStandards.InventoryService({
-    wsdl: 'https://example.com/inventory/wsdl',
-    username: 'myuser',
-    password: 'mypass'
-  });
-
-  try {
-    // Get inventory levels with JSON input
-    const result = await inventory.getInventoryLevels({
-      productId: 'ABC123',
-      filters: {
-        colors: ['Red', 'Blue'],
-        sizes: ['M', 'L', 'XL']
-      }
-    });
-
-    console.log('Inventory Levels:', JSON.stringify(result, null, 2));
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
-}
-
-// Example 2: Using the unified client
-async function unifiedClientExample() {
-  console.log('\n=== Unified Client Usage ===\n');
-  
-  // Create a client with shared authentication
-  // Versions default to newest if not specified
+  // Create client with OneSource (no credentials at client level)
   const client = new PromoStandards.PromoStandardsClient({
-    username: 'myuser',
-    password: 'mypass',
-    timeout: 60000, // 60 seconds
-    autoInitialize: true,
-    services: {
-      inventory: {
-        wsdl: 'https://example.com/inventory/wsdl'
-      },
-      productData: {
-        wsdl: 'https://example.com/product/wsdl'
-      }
-    }
+    onesource: {}
   });
 
+  // Vendor credentials (typically from your database)
+  const vendor = {
+    code: 'SUPPLIER_ID',
+    username: 'vendor_user',
+    password: 'vendor_pass'
+  };
+
   try {
-    // Use inventory service
-    const inventory = await client.inventory.getInventoryLevels({
+    // WSDL is auto-discovered, version defaults to newest
+    const result = await client.inventory(vendor.code, {
+      username: vendor.username,
+      password: vendor.password
+    }).getInventoryLevels({
       productId: 'ABC123'
     });
-    console.log('Inventory:', inventory);
 
-    // Use product data service
-    const product = await client.productData.getProduct({
-      productId: 'ABC123',
-      localizationCountry: 'US',
-      localizationLanguage: 'en'
-    });
-    console.log('Product:', product);
+    console.log('Inventory:', JSON.stringify(result, null, 2));
   } catch (error) {
     console.error('Error:', error.message);
   }
 }
 
-// Example 3: Quick one-off call
+// Example 2: Querying multiple vendors
+async function multiVendorExample() {
+  console.log('\n=== Multi-Vendor Usage ===\n');
+
+  const client = new PromoStandards.PromoStandardsClient({
+    onesource: {}
+  });
+
+  // Simulate vendors from database
+  const vendors = [
+    { code: 'VENDOR_A', username: 'user_a', password: 'pass_a' },
+    { code: 'VENDOR_B', username: 'user_b', password: 'pass_b' },
+    { code: 'VENDOR_C', username: 'user_c', password: 'pass_c' }
+  ];
+
+  try {
+    for (const vendor of vendors) {
+      const result = await client.productData(vendor.code, {
+        username: vendor.username,
+        password: vendor.password
+      }).getProduct({
+        productId: 'PROD-001',
+        localizationCountry: 'US',
+        localizationLanguage: 'en'
+      });
+
+      console.log(`Product from ${vendor.code}:`, result);
+    }
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+// Example 3: Using different services for same vendor
+async function multiServiceExample() {
+  console.log('\n=== Multi-Service Usage ===\n');
+
+  const client = new PromoStandards.PromoStandardsClient({
+    onesource: {}
+  });
+
+  const vendor = {
+    code: 'SUPPLIER_ID',
+    username: 'vendor_user',
+    password: 'vendor_pass'
+  };
+
+  const creds = { username: vendor.username, password: vendor.password };
+
+  try {
+    // Get inventory
+    const inventory = await client.inventory(vendor.code, creds)
+      .getInventoryLevels({ productId: 'ABC123' });
+    console.log('Inventory:', inventory);
+
+    // Get product details
+    const product = await client.productData(vendor.code, creds)
+      .getProduct({
+        productId: 'ABC123',
+        localizationCountry: 'US',
+        localizationLanguage: 'en'
+      });
+    console.log('Product:', product);
+
+    // Get pricing
+    const pricing = await client.pricingConfig(vendor.code, creds)
+      .getConfigurationAndPricing({
+        productId: 'ABC123',
+        currency: 'USD',
+        fobId: 'FOB001',
+        configurationType: 'Decorated'
+      });
+    console.log('Pricing:', pricing);
+
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+// Example 4: Quick one-off call
 async function quickCallExample() {
   console.log('\n=== Quick Call Example ===\n');
 
   try {
-    // Version defaults to newest if not specified
     const result = await PromoStandards.PromoStandardsClient.quickCall({
       service: 'inventory',
       operation: 'getInventoryLevels',
-      wsdl: 'https://example.com/inventory/wsdl',
-      username: 'myuser',
-      password: 'mypass',
+      supplierId: 'SUPPLIER_ID',
+      username: 'vendor_user',
+      password: 'vendor_pass',
+      onesource: {},
       data: {
-        productId: 'XYZ789',
-        filters: {
-          partIds: ['PART-001', 'PART-002']
-        }
+        productId: 'XYZ789'
       }
     });
 
@@ -94,121 +133,80 @@ async function quickCallExample() {
   }
 }
 
-// Example 4: Environment-based authentication
-async function envAuthExample() {
-  console.log('\n=== Environment Auth Example ===\n');
-  
-  // Set environment variables:
-  // PROMOSTANDARDS_ID=myuser
-  // PROMOSTANDARDS_PASSWORD=mypass
-  // PROMOSTANDARDS_VERSION=2.0.0
-
-  // Client will automatically use environment variables
-  const client = new PromoStandards.PromoStandardsClient();
-  
-  const inventory = await client.inventory('https://example.com/inventory/wsdl');
-  
-  try {
-    const result = await inventory.getFilterValues({
-      productId: 'ABC123'
-    });
-    
-    console.log('Filter Values:', result);
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
-}
-
-// Example 5: Lazy WSDL Discovery with Per-Vendor Credentials
-async function lazyDiscoveryExample() {
-  console.log('\n=== Lazy WSDL Discovery Example ===\n');
-
-  // Create client with OneSource configured (no credentials needed at client level)
-  const client = new PromoStandards.PromoStandardsClient({
-    onesource: {}  // Uses default PromoStandards OneSource API
-  });
-
-  // Simulate getting vendor credentials from a database
-  const vendor = {
-    code: 'SUPPLIER_ID',
-    username: 'vendor_user',
-    password: 'vendor_pass'
-  };
-
-  try {
-    // Pass supplier ID and credentials - WSDL auto-discovered on first call
-    const result = await client.inventory(vendor.code, {
-      username: vendor.username,
-      password: vendor.password
-    }).getInventoryLevels({
-      productId: 'ABC123'
-    });
-
-    console.log('Inventory (auto-discovered):', result);
-
-    // Query a different vendor with different credentials
-    const vendor2 = {
-      code: 'ANOTHER_SUPPLIER',
-      username: 'other_user',
-      password: 'other_pass'
-    };
-
-    const product = await client.productData(vendor2.code, {
-      username: vendor2.username,
-      password: vendor2.password
-    }).getProduct({
-      productId: 'XYZ789',
-      localizationCountry: 'US',
-      localizationLanguage: 'en'
-    });
-
-    console.log('Product:', product);
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
-}
-
-// Example 6: Error handling
+// Example 5: Error handling
 async function errorHandlingExample() {
   console.log('\n=== Error Handling Example ===\n');
 
-  const inventory = new PromoStandards.InventoryService({
-    wsdl: 'https://example.com/inventory/wsdl',
-    username: 'myuser',
-    password: 'mypass'
+  const client = new PromoStandards.PromoStandardsClient({
+    onesource: {}
   });
 
+  // Test: Missing credentials
   try {
-    // This will throw a ValidationError
-    await inventory.getInventoryLevels({
+    client.inventory('SUPPLIER_ID');  // No credentials provided
+  } catch (error) {
+    if (error instanceof PromoStandards.ValidationError) {
+      console.log('Caught missing credentials:', error.message);
+    }
+  }
+
+  // Test: Missing required field
+  try {
+    await client.inventory('SUPPLIER_ID', {
+      username: 'user',
+      password: 'pass'
+    }).getInventoryLevels({
       // Missing required productId
       filters: { colors: ['Red'] }
     });
   } catch (error) {
     if (error instanceof PromoStandards.ValidationError) {
-      console.log('Validation Error:', error.message);
-      console.log('Error Details:', error.details);
+      console.log('Caught validation error:', error.message);
     } else if (error instanceof PromoStandards.AuthenticationError) {
-      console.log('Authentication Error:', error.message);
+      console.log('Caught auth error:', error.message);
+    } else if (error instanceof PromoStandards.NetworkError) {
+      console.log('Caught network error:', error.message);
     } else {
-      console.log('Unknown Error:', error);
+      console.log('Other error:', error.message);
     }
+  }
+}
+
+// Example 6: Direct WSDL usage (when you know the endpoint)
+async function directWsdlExample() {
+  console.log('\n=== Direct WSDL Usage ===\n');
+
+  const client = new PromoStandards.PromoStandardsClient({
+    onesource: {}
+  });
+
+  try {
+    // If you already know the WSDL URL, pass it directly
+    const result = await client.inventory('https://supplier.com/inventory.wsdl', {
+      username: 'myuser',
+      password: 'mypass'
+    }).getInventoryLevels({
+      productId: 'ABC123'
+    });
+
+    console.log('Result:', result);
+  } catch (error) {
+    console.error('Error:', error.message);
   }
 }
 
 // Run examples
 async function runExamples() {
-  // Note: These examples won't actually work without valid WSDL endpoints
   console.log('PromoStandards JavaScript Client Examples\n');
-  console.log('Note: Replace example.com URLs with actual PromoStandards endpoints\n');
+  console.log('Note: Replace SUPPLIER_ID with actual vendor codes\n');
 
   // Uncomment to run examples:
-  // await directServiceExample();
-  // await unifiedClientExample();
+  // await basicExample();
+  // await multiVendorExample();
+  // await multiServiceExample();
   // await quickCallExample();
-  // await envAuthExample();
-  // await lazyDiscoveryExample();
   // await errorHandlingExample();
+  // await directWsdlExample();
 }
 
 runExamples();
