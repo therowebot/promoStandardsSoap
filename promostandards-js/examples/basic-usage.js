@@ -120,7 +120,49 @@ async function envAuthExample() {
   }
 }
 
-// Example 5: Error handling
+// Example 5: Lazy WSDL Discovery via OneSource
+async function lazyDiscoveryExample() {
+  console.log('\n=== Lazy WSDL Discovery Example ===\n');
+
+  // Create client with OneSource configured
+  const client = new PromoStandards.PromoStandardsClient({
+    username: 'myuser',
+    password: 'mypass',
+    onesource: {
+      apiUrl: 'https://promostandards.org/WebServiceRepository/WebServiceRepository.svc'
+    }
+  });
+
+  try {
+    // Pass supplier ID instead of WSDL URL
+    // WSDL is automatically discovered from OneSource on first call
+    const result = await client.inventory('SUPPLIER_ID').getInventoryLevels({
+      productId: 'ABC123'
+    });
+
+    console.log('Inventory (auto-discovered):', result);
+
+    // Subsequent calls use cached WSDL
+    const result2 = await client.inventory('SUPPLIER_ID').getFilterValues({
+      productId: 'ABC123'
+    });
+
+    console.log('Filter Values:', result2);
+
+    // You can also use other services with the same pattern
+    const product = await client.productData('SUPPLIER_ID').getProduct({
+      productId: 'ABC123',
+      localizationCountry: 'US',
+      localizationLanguage: 'en'
+    });
+
+    console.log('Product:', product);
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+// Example 6: Error handling
 async function errorHandlingExample() {
   console.log('\n=== Error Handling Example ===\n');
   
@@ -154,12 +196,13 @@ async function runExamples() {
   // Note: These examples won't actually work without valid WSDL endpoints
   console.log('PromoStandards JavaScript Client Examples\n');
   console.log('Note: Replace example.com URLs with actual PromoStandards endpoints\n');
-  
+
   // Uncomment to run examples:
   // await directServiceExample();
   // await unifiedClientExample();
   // await quickCallExample();
   // await envAuthExample();
+  // await lazyDiscoveryExample();
   // await errorHandlingExample();
 }
 
