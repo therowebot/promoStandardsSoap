@@ -1,30 +1,30 @@
 require('dotenv').config();
 const PromoStandards = require('../src/index');
 
-// Load HIT credentials from .env
+// Load HIT credentials and endpoints from .env
 const hit = {
-  code: process.env.hitCode,
   username: process.env.hitUserName,
-  password: process.env.hitPassword
+  password: process.env.hitPassword,
+  endpoints: {
+    inventory: 'https://ppds.hitpromo.net/inventoryV2?wsdl',
+    productData: 'https://ppds.hitpromo.net/productData?wsdl'
+  }
 };
 
-const oneSourceKey = process.env.oneSourceKey;
-
-// Example 1: Basic usage with HIT
+// Example 1: Basic usage with direct WSDL
 async function basicExample() {
   console.log('=== Basic Usage ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: { apiKey: oneSourceKey }
+    username: hit.username,
+    password: hit.password
   });
 
   try {
-    const result = await client.inventory(hit.code, {
-      username: hit.username,
-      password: hit.password
-    }).getInventoryLevels({
-      productId: 'ABC123'
-    });
+    const result = await client.inventory(hit.endpoints.inventory)
+      .getInventoryLevels({
+        productId: '1625'
+      });
 
     console.log('Inventory:', JSON.stringify(result, null, 2));
   } catch (error) {
@@ -32,23 +32,22 @@ async function basicExample() {
   }
 }
 
-// Example 2: Get product data from HIT
+// Example 2: Get product data
 async function productDataExample() {
   console.log('\n=== Product Data ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: { apiKey: oneSourceKey }
+    username: hit.username,
+    password: hit.password
   });
 
   try {
-    const result = await client.productData(hit.code, {
-      username: hit.username,
-      password: hit.password
-    }).getProduct({
-      productId: 'ABC123',
-      localizationCountry: 'US',
-      localizationLanguage: 'en'
-    });
+    const result = await client.productData(hit.endpoints.productData)
+      .getProduct({
+        productId: '1625',
+        localizationCountry: 'US',
+        localizationLanguage: 'en'
+      });
 
     console.log('Product:', JSON.stringify(result, null, 2));
   } catch (error) {
@@ -61,35 +60,24 @@ async function multiServiceExample() {
   console.log('\n=== Multi-Service Usage ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: { apiKey: oneSourceKey }
+    username: hit.username,
+    password: hit.password
   });
-
-  const creds = { username: hit.username, password: hit.password };
 
   try {
     // Get inventory
-    const inventory = await client.inventory(hit.code, creds)
-      .getInventoryLevels({ productId: 'ABC123' });
+    const inventory = await client.inventory(hit.endpoints.inventory)
+      .getInventoryLevels({ productId: '1625' });
     console.log('Inventory:', inventory);
 
     // Get product details
-    const product = await client.productData(hit.code, creds)
+    const product = await client.productData(hit.endpoints.productData)
       .getProduct({
-        productId: 'ABC123',
+        productId: '1625',
         localizationCountry: 'US',
         localizationLanguage: 'en'
       });
     console.log('Product:', product);
-
-    // Get pricing
-    const pricing = await client.pricingConfig(hit.code, creds)
-      .getConfigurationAndPricing({
-        productId: 'ABC123',
-        currency: 'USD',
-        fobId: 'FOB001',
-        configurationType: 'Decorated'
-      });
-    console.log('Pricing:', pricing);
 
   } catch (error) {
     console.error('Error:', error.message);
@@ -104,12 +92,11 @@ async function quickCallExample() {
     const result = await PromoStandards.PromoStandardsClient.quickCall({
       service: 'inventory',
       operation: 'getInventoryLevels',
-      supplierId: hit.code,
+      wsdl: hit.endpoints.inventory,
       username: hit.username,
       password: hit.password,
-      onesource: { apiKey: oneSourceKey },
       data: {
-        productId: 'XYZ789'
+        productId: '1625'
       }
     });
 
@@ -119,32 +106,44 @@ async function quickCallExample() {
   }
 }
 
-// Example 5: Error handling
+// Example 5: Using services directly (without client wrapper)
+async function directServiceExample() {
+  console.log('\n=== Direct Service Usage ===\n');
+
+  const inventoryService = new PromoStandards.InventoryService({
+    wsdl: hit.endpoints.inventory,
+    username: hit.username,
+    password: hit.password,
+    version: '2.0.0'
+  });
+
+  try {
+    const result = await inventoryService.getInventoryLevels({
+      productId: '1625'
+    });
+
+    console.log('Direct Service Result:', JSON.stringify(result, null, 2));
+  } catch (error) {
+    console.error('Error:', error.message);
+  }
+}
+
+// Example 6: Error handling
 async function errorHandlingExample() {
   console.log('\n=== Error Handling Example ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
-    onesource: { apiKey: oneSourceKey }
+    username: hit.username,
+    password: hit.password
   });
-
-  // Test: Missing credentials
-  try {
-    client.inventory(hit.code);  // No credentials provided
-  } catch (error) {
-    if (error instanceof PromoStandards.ValidationError) {
-      console.log('Caught missing credentials:', error.message);
-    }
-  }
 
   // Test: Missing required field
   try {
-    await client.inventory(hit.code, {
-      username: hit.username,
-      password: hit.password
-    }).getInventoryLevels({
-      // Missing required productId
-      filters: { colors: ['Red'] }
-    });
+    await client.inventory(hit.endpoints.inventory)
+      .getInventoryLevels({
+        // Missing required productId
+        filters: { colors: ['Red'] }
+      });
   } catch (error) {
     if (error instanceof PromoStandards.ValidationError) {
       console.log('Caught validation error:', error.message);
@@ -158,51 +157,26 @@ async function errorHandlingExample() {
   }
 }
 
-// Example 6: Direct WSDL usage (when you know the endpoint)
-async function directWsdlExample() {
-  console.log('\n=== Direct WSDL Usage ===\n');
-
-  const client = new PromoStandards.PromoStandardsClient({
-    onesource: { apiKey: oneSourceKey }
-  });
-
-  try {
-    // If you already know the WSDL URL, pass it directly
-    const result = await client.inventory('https://supplier.com/inventory.wsdl', {
-      username: hit.username,
-      password: hit.password
-    }).getInventoryLevels({
-      productId: 'ABC123'
-    });
-
-    console.log('Result:', result);
-  } catch (error) {
-    console.error('Error:', error.message);
-  }
-}
-
 // Run examples
 async function runExamples() {
   console.log('PromoStandards JavaScript Client Examples\n');
 
-  if (!hit.code || !hit.username || !hit.password) {
+  if (!hit.username || !hit.password) {
     console.log('Please create a .env file with HIT credentials:');
-    console.log('  hitCode=HIT');
     console.log('  hitUserName=your_username');
-    console.log('  hitPassword=your_password');
-    console.log('  oneSourceKey=your_onesource_key\n');
+    console.log('  hitPassword=your_password\n');
     return;
   }
 
-  console.log(`Using HIT vendor: ${hit.code}\n`);
+  console.log('Using HIT Promotional endpoints\n');
 
   // Uncomment to run examples:
   // await basicExample();
   // await productDataExample();
   // await multiServiceExample();
   // await quickCallExample();
+  // await directServiceExample();
   // await errorHandlingExample();
-  // await directWsdlExample();
 }
 
 runExamples();

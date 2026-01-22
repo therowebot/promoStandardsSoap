@@ -1,7 +1,5 @@
 const PromoStandardsClient = require('./client');
-const { SupplierConnection } = require('./client');
 const PromoStandardsAuth = require('./core/auth');
-const OneSourceClient = require('./core/onesource-client');
 const WSDLProvider = require('./core/wsdl-provider');
 
 // Core classes
@@ -37,11 +35,9 @@ module.exports = PromoStandardsClient;
 
 // Named exports - Client
 module.exports.PromoStandardsClient = PromoStandardsClient;
-module.exports.SupplierConnection = SupplierConnection;
 
-// Named exports - Auth & OneSource
+// Named exports - Auth
 module.exports.PromoStandardsAuth = PromoStandardsAuth;
-module.exports.OneSourceClient = OneSourceClient;
 module.exports.WSDLProvider = WSDLProvider;
 
 // Services
@@ -73,7 +69,6 @@ module.exports.TimeoutError = TimeoutError;
 // Convenience factory methods
 module.exports.createClient = (options) => new PromoStandardsClient(options);
 module.exports.createAuth = (credentials) => new PromoStandardsAuth(credentials);
-module.exports.createOneSourceClient = (options) => new OneSourceClient(options);
 module.exports.createWsdlProvider = (options) => new WSDLProvider(options);
 
 // Service factory methods

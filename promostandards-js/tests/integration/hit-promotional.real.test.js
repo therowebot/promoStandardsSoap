@@ -4,7 +4,6 @@
  * These tests require actual credentials in .env file:
  * - hitUserName
  * - hitPassword
- * - oneSourceKey
  *
  * Run with: npm run test:integration
  * Skip in CI by not setting the environment variables
@@ -16,14 +15,11 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
 const PromoStandardsClient = require('../../src/client');
 const InventoryService = require('../../src/services/inventory/inventory-service');
 const ProductDataService = require('../../src/services/product-data/product-data-service');
-const OneSourceClient = require('../../src/core/onesource-client');
 
 // Skip all tests if credentials are not available
 const hasCredentials = process.env.hitUserName && process.env.hitPassword;
-const hasOneSourceKey = process.env.oneSourceKey;
 
 const describeIfCredentials = hasCredentials ? describe : describe.skip;
-const describeIfOneSource = hasOneSourceKey ? describe : describe.skip;
 
 // Known Hit Promotional WSDL endpoints (correct URLs from ppds.hitpromo.net)
 const HIT_ENDPOINTS = {
@@ -161,86 +157,6 @@ describe('Hit Promotional Products - Real Integration Tests', () => {
     });
   });
 
-  describeIfOneSource('OneSourceClient', () => {
-    let oneSourceClient;
-
-    beforeAll(() => {
-      // Parse the OneSource key format: API_KEY|SECRET
-      const [apiKey] = (process.env.oneSourceKey || '').split('|');
-
-      oneSourceClient = new OneSourceClient({
-        apiUrl: 'https://promostandards.org/WebServiceRepository/WebServiceRepository.svc',
-        apiKey: apiKey
-      });
-    });
-
-    it('should connect to OneSource API', async () => {
-      try {
-        const suppliers = await oneSourceClient.getSuppliers();
-
-        console.log('Total Suppliers:', suppliers.length);
-        console.log('First 5 Suppliers:', suppliers.slice(0, 5).map(s => ({
-          id: s.id,
-          name: s.name,
-          asiNumber: s.asiNumber
-        })));
-
-        expect(suppliers).toBeDefined();
-        expect(suppliers.length).toBeGreaterThan(0);
-      } catch (error) {
-        console.log('OneSource Error:', error.message);
-        throw error;
-      }
-    });
-
-    it('should get Hit Promotional endpoints', async () => {
-      try {
-        // Try different possible IDs for Hit Promotional
-        const possibleIds = ['hit', 'HIT', '61125', 'hitpromo'];
-
-        for (const supplierId of possibleIds) {
-          try {
-            const endpoints = await oneSourceClient.getSupplierEndpoints(supplierId);
-
-            console.log(`Endpoints for ${supplierId}:`, JSON.stringify(endpoints, null, 2));
-
-            // Check which services are available
-            const availableServices = Object.entries(endpoints)
-              .filter(([_, eps]) => eps && eps.length > 0)
-              .map(([name, eps]) => ({ name, versions: eps.map(e => e.version) }));
-
-            console.log('Available Services:', availableServices);
-
-            expect(endpoints).toBeDefined();
-            return; // Success, exit the loop
-          } catch (e) {
-            console.log(`ID ${supplierId} not found, trying next...`);
-          }
-        }
-
-        // If we get here, none of the IDs worked
-        console.log('Could not find Hit Promotional with any known ID');
-      } catch (error) {
-        console.log('Endpoints Error:', error.message);
-      }
-    });
-
-    it('should search for suppliers', async () => {
-      try {
-        const results = await oneSourceClient.searchSuppliers('Hit');
-
-        console.log('Search Results:', results.map(s => ({
-          id: s.id,
-          name: s.name
-        })));
-
-        expect(results).toBeDefined();
-      } catch (error) {
-        console.log('Search Error:', error.message);
-      }
-    });
-  });
-
   describeIfCredentials('PromoStandardsClient - Full Flow', () => {
     it('should work with unified client', async () => {
       const client = new PromoStandardsClient({
@@ -271,7 +187,6 @@ describe('Hit Promotional Products - Real Integration Tests', () => {
 // Export test configuration for external runners
 module.exports = {
   hasCredentials,
-  hasOneSourceKey,
   HIT_ENDPOINTS,
   TEST_PRODUCTS
 };

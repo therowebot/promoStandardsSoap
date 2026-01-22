@@ -1,5 +1,4 @@
 const PromoStandardsAuth = require('./core/auth');
-const OneSourceClient = require('./core/onesource-client');
 const WSDLProvider = require('./core/wsdl-provider');
 const InventoryService = require('./services/inventory/inventory-service');
 const ProductDataService = require('./services/product-data/product-data-service');
@@ -36,16 +35,11 @@ class PromoStandardsClient {
   constructor(options = {}) {
     this.auth = this.createAuth(options);
     this.services = new Map();
-    this.supplierEndpoints = new Map(); // Cache for supplier endpoints
-    this._lazyServices = new Map(); // Cache for lazy-initialized services
     this.defaultOptions = {
       timeout: options.timeout || 30000,
       cache: options.cache,
       cacheTTL: options.cacheTTL
     };
-
-    // Initialize OneSource client if configured
-    this.onesource = this.createOneSourceClient(options.onesource);
 
     if (options.autoInitialize) {
       this.initializeServices(options.services || {});
@@ -84,33 +78,6 @@ class PromoStandardsClient {
     }
 
     return new PromoStandardsAuth(authConfig);
-  }
-
-  /**
-   * Create OneSource client for endpoint discovery
-   */
-  createOneSourceClient(onesourceOptions) {
-    if (onesourceOptions === false) {
-      return null;
-    }
-
-    if (onesourceOptions instanceof OneSourceClient) {
-      return onesourceOptions;
-    }
-
-    // Try environment configuration
-    const envClient = OneSourceClient.fromEnvironment();
-    if (envClient) {
-      debug('Using OneSource from environment');
-      return envClient;
-    }
-
-    // Create from options if provided
-    if (onesourceOptions && typeof onesourceOptions === 'object') {
-      return new OneSourceClient(onesourceOptions);
-    }
-
-    return null;
   }
 
   /**
@@ -170,303 +137,141 @@ class PromoStandardsClient {
   }
 
   /**
-   * Connect to a supplier via OneSource and auto-discover endpoints
-   * @param {string} supplierId - Supplier identifier (ASI number, SAGE ID, etc.)
-   * @param {Object} options - Optional configuration
-   * @returns {Promise<SupplierConnection>} Supplier connection with service accessors
-   */
-  async useSupplier(supplierId, options = {}) {
-    if (!this.onesource) {
-      throw new ValidationError(
-        'OneSource is not configured. Provide onesource options or set ONESOURCE_API_URL environment variable.',
-        { method: 'useSupplier' }
-      );
-    }
-
-    debug(`Connecting to supplier: ${supplierId}`);
-
-    // Get supplier endpoints from OneSource
-    const endpoints = await this.onesource.getSupplierEndpoints(supplierId);
-    this.supplierEndpoints.set(supplierId, endpoints);
-
-    // Create a supplier connection object with service accessors
-    return new SupplierConnection(this, supplierId, endpoints, options);
-  }
-
-  /**
-   * Get available suppliers from OneSource
-   * @returns {Promise<Array>} List of suppliers
-   */
-  async getSuppliers() {
-    if (!this.onesource) {
-      throw new ValidationError(
-        'OneSource is not configured',
-        { method: 'getSuppliers' }
-      );
-    }
-
-    return this.onesource.getSuppliers();
-  }
-
-  /**
-   * Search suppliers via OneSource
-   * @param {string|Object} query - Search query
-   * @returns {Promise<Array>} Matching suppliers
-   */
-  async searchSuppliers(query) {
-    if (!this.onesource) {
-      throw new ValidationError(
-        'OneSource is not configured',
-        { method: 'searchSuppliers' }
-      );
-    }
-
-    return this.onesource.searchSuppliers(query);
-  }
-
-  /**
-   * Get supplier details from OneSource
-   * @param {string} supplierId - Supplier identifier
-   * @returns {Promise<Object>} Supplier details
-   */
-  async getSupplier(supplierId) {
-    if (!this.onesource) {
-      throw new ValidationError(
-        'OneSource is not configured',
-        { method: 'getSupplier' }
-      );
-    }
-
-    return this.onesource.getSupplier(supplierId);
-  }
-
-  /**
-   * Check if a string looks like a URL
-   * @private
-   */
-  _isUrl(str) {
-    return str && (str.startsWith('http://') || str.startsWith('https://'));
-  }
-
-  /**
-   * Create a service with direct WSDL (existing behavior)
+   * Create a service with direct WSDL
    * @private
    */
   _createDirectService(serviceName, ServiceClass, wsdl, options = {}) {
     const key = `${serviceName}_direct_${wsdl}`;
 
     if (!this.services.has(key)) {
-      this.addService(key, ServiceClass, { ...options, wsdl });
+      // Use per-call credentials if provided, otherwise fall back to client auth
+      let auth = this.auth;
+      if (options.username || options.password) {
+        auth = new PromoStandardsAuth({
+          id: options.username,
+          password: options.password
+        });
+      } else if (!auth) {
+        throw new ValidationError(
+          'Credentials required. Provide username/password in options or configure client-level auth.',
+          { method: serviceName }
+        );
+      }
+
+      this.addService(key, ServiceClass, { ...options, wsdl, auth });
     }
 
     return this.services.get(key);
   }
 
   /**
-   * Create a lazy service that resolves WSDL on first method call
-   * @private
-   */
-  _createLazyService(serviceName, ServiceClass, supplierId, options = {}) {
-    // Include credentials in cache key if provided (different creds = different service)
-    const hasCustomAuth = options.username || options.password;
-    const cacheKey = `${serviceName}:${supplierId}:${options.version || 'latest'}`;
-
-    // Only use cache if no custom credentials provided
-    if (!hasCustomAuth && this._lazyServices.has(cacheKey)) {
-      debug(`Returning cached lazy service: ${cacheKey}`);
-      return this._lazyServices.get(cacheKey);
-    }
-
-    if (!this.onesource) {
-      throw new ValidationError(
-        'OneSource is not configured. Provide onesource options or set ONESOURCE_API_URL environment variable.',
-        { method: serviceName, supplierId }
-      );
-    }
-
-    debug(`Creating lazy service: ${serviceName} for supplier ${supplierId}`);
-
-    // Create WSDLProvider for this supplier/service combo
-    const wsdlProvider = WSDLProvider.fromSupplier(
-      supplierId,
-      serviceName,
-      this.onesource,
-      options.version
-    );
-
-    // Use per-call credentials if provided, otherwise fall back to client auth
-    let auth = this.auth;
-    if (hasCustomAuth) {
-      auth = new PromoStandardsAuth({
-        id: options.username,
-        password: options.password
-      });
-    } else if (!auth) {
-      throw new ValidationError(
-        'Credentials required. Provide username/password in options or configure client-level auth.',
-        { method: serviceName, supplierId }
-      );
-    }
-
-    // Create service with provider (WSDL resolves on first call)
-    const serviceOptions = {
-      ...this.defaultOptions,
-      ...options,
-      wsdlProvider,
-      auth
-    };
-
-    const service = new ServiceClass(serviceOptions);
-
-    // Only cache if no custom credentials (stateless per-call pattern)
-    if (!hasCustomAuth) {
-      this._lazyServices.set(cacheKey, service);
-    }
-
-    return service;
-  }
-
-  /**
-   * Get inventory service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get inventory service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {InventoryService} Inventory service instance
    */
-  inventory(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('inventory', InventoryService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('inventory', InventoryService, wsdlOrSupplierId, options);
+  inventory(wsdl, options = {}) {
+    return this._createDirectService('inventory', InventoryService, wsdl, options);
   }
 
   /**
-   * Get product data service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get product data service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {ProductDataService} Product data service instance
    */
-  productData(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('productData', ProductDataService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('productData', ProductDataService, wsdlOrSupplierId, options);
+  productData(wsdl, options = {}) {
+    return this._createDirectService('productData', ProductDataService, wsdl, options);
   }
 
   /**
-   * Get order status service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get order status service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {OrderStatusService} Order status service instance
    */
-  orderStatus(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('orderStatus', OrderStatusService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('orderStatus', OrderStatusService, wsdlOrSupplierId, options);
+  orderStatus(wsdl, options = {}) {
+    return this._createDirectService('orderStatus', OrderStatusService, wsdl, options);
   }
 
   /**
-   * Get order shipment service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get order shipment service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {OrderShipmentNotificationService} Order shipment service instance
    */
-  orderShipment(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('orderShipment', OrderShipmentNotificationService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('orderShipment', OrderShipmentNotificationService, wsdlOrSupplierId, options);
+  orderShipment(wsdl, options = {}) {
+    return this._createDirectService('orderShipment', OrderShipmentNotificationService, wsdl, options);
   }
 
   /**
-   * Get invoice service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get invoice service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {InvoiceService} Invoice service instance
    */
-  invoice(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('invoice', InvoiceService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('invoice', InvoiceService, wsdlOrSupplierId, options);
+  invoice(wsdl, options = {}) {
+    return this._createDirectService('invoice', InvoiceService, wsdl, options);
   }
 
   /**
-   * Get pricing configuration service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get pricing configuration service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {PricingConfigurationService} Pricing configuration service instance
    */
-  pricingConfig(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('pricingConfig', PricingConfigurationService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('pricingConfig', PricingConfigurationService, wsdlOrSupplierId, options);
+  pricingConfig(wsdl, options = {}) {
+    return this._createDirectService('pricingConfig', PricingConfigurationService, wsdl, options);
   }
 
   /**
-   * Get product media service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get product media service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {ProductMediaService} Product media service instance
    */
-  productMedia(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('productMedia', ProductMediaService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('productMedia', ProductMediaService, wsdlOrSupplierId, options);
+  productMedia(wsdl, options = {}) {
+    return this._createDirectService('productMedia', ProductMediaService, wsdl, options);
   }
 
   /**
-   * Get purchase order service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get purchase order service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {PurchaseOrderService} Purchase order service instance
    */
-  purchaseOrder(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('purchaseOrder', PurchaseOrderService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('purchaseOrder', PurchaseOrderService, wsdlOrSupplierId, options);
+  purchaseOrder(wsdl, options = {}) {
+    return this._createDirectService('purchaseOrder', PurchaseOrderService, wsdl, options);
   }
 
   /**
-   * Get product compliance service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get product compliance service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {ProductComplianceService} Product compliance service instance
    */
-  productCompliance(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('productCompliance', ProductComplianceService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('productCompliance', ProductComplianceService, wsdlOrSupplierId, options);
+  productCompliance(wsdl, options = {}) {
+    return this._createDirectService('productCompliance', ProductComplianceService, wsdl, options);
   }
 
   /**
-   * Get company data service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get company data service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {CompanyDataService} Company data service instance
    */
-  companyData(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('companyData', CompanyDataService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('companyData', CompanyDataService, wsdlOrSupplierId, options);
+  companyData(wsdl, options = {}) {
+    return this._createDirectService('companyData', CompanyDataService, wsdl, options);
   }
 
   /**
-   * Get remittance advice service - auto-discovers WSDL if supplier ID provided
-   * @param {string} wsdlOrSupplierId - WSDL URL or supplier identifier
+   * Get remittance advice service
+   * @param {string} wsdl - WSDL URL
    * @param {Object} options - Optional configuration
    * @returns {RemittanceAdviceService} Remittance advice service instance
    */
-  remittanceAdvice(wsdlOrSupplierId, options = {}) {
-    if (this._isUrl(wsdlOrSupplierId)) {
-      return this._createDirectService('remittanceAdvice', RemittanceAdviceService, wsdlOrSupplierId, options);
-    }
-    return this._createLazyService('remittanceAdvice', RemittanceAdviceService, wsdlOrSupplierId, options);
+  remittanceAdvice(wsdl, options = {}) {
+    return this._createDirectService('remittanceAdvice', RemittanceAdviceService, wsdl, options);
   }
 
   /**
@@ -486,17 +291,13 @@ class PromoStandardsClient {
     for (const service of this.services.values()) {
       service.auth = this.auth;
     }
-
-    for (const service of this._lazyServices.values()) {
-      service.auth = this.auth;
-    }
   }
 
   /**
    * Quick one-off call without maintaining client state
    */
   static async quickCall(options) {
-    const { service, operation, wsdl, supplierId, data, ...clientOptions } = options;
+    const { service, operation, wsdl, data, ...clientOptions } = options;
 
     if (!service || !operation) {
       throw new ValidationError(
@@ -505,23 +306,16 @@ class PromoStandardsClient {
       );
     }
 
-    if (!wsdl && !supplierId) {
+    if (!wsdl) {
       throw new ValidationError(
-        'Either wsdl or supplierId is required for quickCall',
+        'wsdl is required for quickCall',
         { provided: Object.keys(options) }
       );
     }
 
     const client = new PromoStandardsClient(clientOptions);
 
-    let serviceInstance;
-    if (supplierId) {
-      // Use lazy service with auto-discovery
-      serviceInstance = client[service](supplierId);
-    } else {
-      // Use provided WSDL directly
-      serviceInstance = client[service](wsdl);
-    }
+    const serviceInstance = client[service](wsdl);
 
     if (!serviceInstance[operation]) {
       throw new ValidationError(
@@ -556,166 +350,6 @@ class PromoStandardsClient {
 
     return info;
   }
-
-  /**
-   * Get the OneSource client instance
-   */
-  getOneSourceClient() {
-    return this.onesource;
-  }
-
-  /**
-   * Clear all cached lazy services
-   */
-  clearLazyServiceCache() {
-    this._lazyServices.clear();
-    debug('Lazy service cache cleared');
-  }
-}
-
-/**
- * SupplierConnection - Represents a connection to a specific supplier
- * with auto-discovered service endpoints
- */
-class SupplierConnection {
-  constructor(client, supplierId, endpoints, options = {}) {
-    this.client = client;
-    this.supplierId = supplierId;
-    this.endpoints = endpoints;
-    this.options = options;
-    this.services = new Map();
-  }
-
-  /**
-   * Get a service for this supplier
-   * @param {string} serviceName - Service name (e.g., 'inventory', 'productData')
-   * @param {string} version - Optional version (defaults to latest)
-   * @returns {Promise<BaseService>} Service instance
-   */
-  async getService(serviceName, version) {
-    const key = `${serviceName}_${version || 'latest'}`;
-
-    if (this.services.has(key)) {
-      return this.services.get(key);
-    }
-
-    const serviceEndpoints = this.endpoints[serviceName];
-    if (!serviceEndpoints || serviceEndpoints.length === 0) {
-      throw new ValidationError(
-        `Supplier ${this.supplierId} does not support ${serviceName}`,
-        {
-          supplierId: this.supplierId,
-          serviceName,
-          availableServices: Object.keys(this.endpoints).filter(k => this.endpoints[k].length > 0)
-        }
-      );
-    }
-
-    // Find the endpoint for requested version or latest
-    let endpoint;
-    if (version) {
-      endpoint = serviceEndpoints.find(e => e.version === version);
-      if (!endpoint) {
-        throw new ValidationError(
-          `Version ${version} not available for ${serviceName}`,
-          {
-            supplierId: this.supplierId,
-            serviceName,
-            requestedVersion: version,
-            availableVersions: serviceEndpoints.map(e => e.version)
-          }
-        );
-      }
-    } else {
-      // Get latest version
-      endpoint = [...serviceEndpoints].sort((a, b) => {
-        const partsA = a.version.split('.').map(Number);
-        const partsB = b.version.split('.').map(Number);
-        for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-          const diff = (partsB[i] || 0) - (partsA[i] || 0);
-          if (diff !== 0) return diff;
-        }
-        return 0;
-      })[0];
-    }
-
-    // Get service class from registry
-    const ServiceClass = SERVICE_REGISTRY[serviceName];
-    if (!ServiceClass) {
-      throw new ValidationError(
-        `Service ${serviceName} is not implemented yet`,
-        { serviceName, implementedServices: Object.keys(SERVICE_REGISTRY) }
-      );
-    }
-
-    // Create service instance
-    const serviceOptions = {
-      ...this.client.defaultOptions,
-      ...this.options,
-      wsdl: endpoint.wsdl,
-      endpoint: endpoint.endpoint,
-      version: endpoint.version,
-      auth: this.client.auth
-    };
-
-    const service = new ServiceClass(serviceOptions);
-    this.services.set(key, service);
-
-    return service;
-  }
-
-  /**
-   * Get inventory service for this supplier
-   */
-  get inventory() {
-    return {
-      getInventoryLevels: async (params) => {
-        const service = await this.getService('inventory');
-        return service.getInventoryLevels(params);
-      },
-      getFilterValues: async (params) => {
-        const service = await this.getService('inventory');
-        return service.getFilterValues(params);
-      }
-    };
-  }
-
-  /**
-   * Get product data service for this supplier
-   */
-  get productData() {
-    return {
-      getProduct: async (params) => {
-        const service = await this.getService('productData');
-        return service.getProduct(params);
-      },
-      getProductDateModified: async (params) => {
-        const service = await this.getService('productData');
-        return service.getProductDateModified(params);
-      },
-      getProductSellable: async (params) => {
-        const service = await this.getService('productData');
-        return service.getProductSellable(params);
-      },
-      getProductCloseout: async (params) => {
-        const service = await this.getService('productData');
-        return service.getProductCloseout(params);
-      }
-    };
-  }
-
-  /**
-   * Get list of supported services for this supplier
-   */
-  getSupportedServices() {
-    return Object.entries(this.endpoints)
-      .filter(([_, endpoints]) => endpoints.length > 0)
-      .map(([name, endpoints]) => ({
-        name,
-        versions: endpoints.map(e => e.version)
-      }));
-  }
 }
 
 module.exports = PromoStandardsClient;
-module.exports.SupplierConnection = SupplierConnection;

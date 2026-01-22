@@ -4,18 +4,14 @@ const { ValidationError } = require('./errors');
 /**
  * WSDLProvider - Abstraction for resolving WSDL URLs
  *
- * Supports three modes:
+ * Supports two modes:
  * 1. Static WSDL URL (backward compatible)
- * 2. Supplier-based discovery via OneSource
- * 3. Custom resolver function
+ * 2. Custom resolver function
  */
 class WSDLProvider {
   constructor(options = {}) {
     this.staticWsdl = options.wsdl;
-    this.supplierId = options.supplierId;
-    this.serviceName = options.serviceName;
     this.version = options.version;
-    this.onesource = options.onesource;
     this.customResolver = options.resolver;
 
     // Cache for resolved WSDL
@@ -40,7 +36,7 @@ class WSDLProvider {
   }
 
   /**
-   * Resolve WSDL URL - returns cached result or fetches from OneSource
+   * Resolve WSDL URL - returns cached result or uses resolver
    * @returns {Promise<{wsdl: string, endpoint?: string, version?: string}>}
    */
   async resolve() {
@@ -67,7 +63,7 @@ class WSDLProvider {
       return this._resolving;
     }
 
-    debug(`Resolving WSDL for supplier: ${this.supplierId}, service: ${this.serviceName}`);
+    debug('Resolving WSDL...');
     this._resolving = this._doResolve();
 
     try {
@@ -86,38 +82,16 @@ class WSDLProvider {
     // Custom resolver
     if (this.customResolver) {
       debug('Using custom resolver');
-      const result = await this.customResolver(this.supplierId, this.serviceName, this.version);
+      const result = await this.customResolver(this.version);
       this._resolvedWsdl = result.wsdl;
       this._resolvedEndpoint = result.endpoint;
       this._resolvedVersion = result.version;
       return result;
     }
 
-    // OneSource discovery
-    if (this.onesource && this.supplierId && this.serviceName) {
-      debug(`Fetching from OneSource: ${this.supplierId}/${this.serviceName}`);
-      const endpoint = await this.onesource.getServiceEndpoint(
-        this.supplierId,
-        this.serviceName,
-        this.version
-      );
-
-      this._resolvedWsdl = endpoint.wsdl;
-      this._resolvedEndpoint = endpoint.endpoint;
-      this._resolvedVersion = endpoint.version;
-
-      debug(`Resolved WSDL: ${endpoint.wsdl}, version: ${endpoint.version}`);
-
-      return {
-        wsdl: endpoint.wsdl,
-        endpoint: endpoint.endpoint,
-        version: endpoint.version
-      };
-    }
-
     throw new ValidationError(
-      'Cannot resolve WSDL: provide wsdl, supplierId with onesource, or custom resolver',
-      { supplierId: this.supplierId, serviceName: this.serviceName }
+      'Cannot resolve WSDL: provide wsdl or custom resolver',
+      {}
     );
   }
 
@@ -152,20 +126,8 @@ class WSDLProvider {
   }
 
   /**
-   * Create a provider for supplier-based discovery
-   * @param {string} supplierId - Supplier identifier
-   * @param {string} serviceName - Service name (e.g., 'inventory')
-   * @param {OneSourceClient} onesource - OneSource client instance
-   * @param {string} [version] - Optional version
-   * @returns {WSDLProvider}
-   */
-  static fromSupplier(supplierId, serviceName, onesource, version) {
-    return new WSDLProvider({ supplierId, serviceName, onesource, version });
-  }
-
-  /**
    * Create a provider with a custom resolver function
-   * @param {Function} resolver - Async function (supplierId, serviceName, version) => {wsdl, endpoint?, version?}
+   * @param {Function} resolver - Async function (version) => {wsdl, endpoint?, version?}
    * @returns {WSDLProvider}
    */
   static fromResolver(resolver) {
