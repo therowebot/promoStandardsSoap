@@ -54,6 +54,7 @@ class PromoStandardsClient {
 
   /**
    * Create authentication handler
+   * Returns null if no credentials provided (for per-call auth pattern)
    */
   createAuth(options) {
     if (options.auth instanceof PromoStandardsAuth) {
@@ -64,6 +65,12 @@ class PromoStandardsClient {
     if (authFromEnv && !options.auth && !options.id && !options.username) {
       debug('Using authentication from environment');
       return authFromEnv;
+    }
+
+    // If no credentials provided, return null (per-call auth will be used)
+    if (!options.id && !options.username && !options.auth) {
+      debug('No client-level auth configured - per-call credentials required');
+      return null;
     }
 
     const authConfig = {
@@ -260,9 +267,12 @@ class PromoStandardsClient {
    * @private
    */
   _createLazyService(serviceName, ServiceClass, supplierId, options = {}) {
+    // Include credentials in cache key if provided (different creds = different service)
+    const hasCustomAuth = options.username || options.password;
     const cacheKey = `${serviceName}:${supplierId}:${options.version || 'latest'}`;
 
-    if (this._lazyServices.has(cacheKey)) {
+    // Only use cache if no custom credentials provided
+    if (!hasCustomAuth && this._lazyServices.has(cacheKey)) {
       debug(`Returning cached lazy service: ${cacheKey}`);
       return this._lazyServices.get(cacheKey);
     }
@@ -284,16 +294,34 @@ class PromoStandardsClient {
       options.version
     );
 
+    // Use per-call credentials if provided, otherwise fall back to client auth
+    let auth = this.auth;
+    if (hasCustomAuth) {
+      auth = new PromoStandardsAuth({
+        id: options.username,
+        password: options.password
+      });
+    } else if (!auth) {
+      throw new ValidationError(
+        'Credentials required. Provide username/password in options or configure client-level auth.',
+        { method: serviceName, supplierId }
+      );
+    }
+
     // Create service with provider (WSDL resolves on first call)
     const serviceOptions = {
       ...this.defaultOptions,
       ...options,
       wsdlProvider,
-      auth: this.auth
+      auth
     };
 
     const service = new ServiceClass(serviceOptions);
-    this._lazyServices.set(cacheKey, service);
+
+    // Only cache if no custom credentials (stateless per-call pattern)
+    if (!hasCustomAuth) {
+      this._lazyServices.set(cacheKey, service);
+    }
 
     return service;
   }

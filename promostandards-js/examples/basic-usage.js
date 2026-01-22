@@ -119,38 +119,45 @@ async function envAuthExample() {
   }
 }
 
-// Example 5: Lazy WSDL Discovery via OneSource
+// Example 5: Lazy WSDL Discovery with Per-Vendor Credentials
 async function lazyDiscoveryExample() {
   console.log('\n=== Lazy WSDL Discovery Example ===\n');
 
-  // Create client with OneSource configured
+  // Create client with OneSource configured (no credentials needed at client level)
   const client = new PromoStandards.PromoStandardsClient({
-    username: 'myuser',
-    password: 'mypass',
-    onesource: {
-      apiUrl: 'https://promostandards.org/WebServiceRepository/WebServiceRepository.svc'
-    }
+    onesource: {}  // Uses default PromoStandards OneSource API
   });
 
+  // Simulate getting vendor credentials from a database
+  const vendor = {
+    code: 'SUPPLIER_ID',
+    username: 'vendor_user',
+    password: 'vendor_pass'
+  };
+
   try {
-    // Pass supplier ID instead of WSDL URL
-    // WSDL is automatically discovered from OneSource on first call
-    const result = await client.inventory('SUPPLIER_ID').getInventoryLevels({
+    // Pass supplier ID and credentials - WSDL auto-discovered on first call
+    const result = await client.inventory(vendor.code, {
+      username: vendor.username,
+      password: vendor.password
+    }).getInventoryLevels({
       productId: 'ABC123'
     });
 
     console.log('Inventory (auto-discovered):', result);
 
-    // Subsequent calls use cached WSDL
-    const result2 = await client.inventory('SUPPLIER_ID').getFilterValues({
-      productId: 'ABC123'
-    });
+    // Query a different vendor with different credentials
+    const vendor2 = {
+      code: 'ANOTHER_SUPPLIER',
+      username: 'other_user',
+      password: 'other_pass'
+    };
 
-    console.log('Filter Values:', result2);
-
-    // You can also use other services with the same pattern
-    const product = await client.productData('SUPPLIER_ID').getProduct({
-      productId: 'ABC123',
+    const product = await client.productData(vendor2.code, {
+      username: vendor2.username,
+      password: vendor2.password
+    }).getProduct({
+      productId: 'XYZ789',
       localizationCountry: 'US',
       localizationLanguage: 'en'
     });
