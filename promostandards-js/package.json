@@ -1,0 +1,40 @@
+{
+  "name": "promostandards",
+  "version": "1.0.0",
+  "description": "JavaScript client library for PromoStandards SOAP/XML services with JSON interface",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix"
+  },
+  "keywords": [
+    "promostandards",
+    "promotional-products",
+    "soap",
+    "xml",
+    "json",
+    "api-client"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "soap": "^1.0.0",
+    "xml2js": "^0.6.2",
+    "lodash": "^4.17.21",
+    "ajv": "^8.12.0",
+    "debug": "^4.3.4",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.56.0",
+    "@types/node": "^20.10.0",
+    "nock": "^13.4.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
