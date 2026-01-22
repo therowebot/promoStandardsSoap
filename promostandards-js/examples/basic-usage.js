@@ -3,13 +3,13 @@ const PromoStandards = require('../src/index');
 // Example 1: Direct service usage
 async function directServiceExample() {
   console.log('=== Direct Service Usage ===\n');
-  
+
   // Create an inventory service instance
+  // Version defaults to newest (2.0.0) if not specified
   const inventory = new PromoStandards.InventoryService({
     wsdl: 'https://example.com/inventory/wsdl',
     username: 'myuser',
-    password: 'mypass',
-    version: '2.0.0'
+    password: 'mypass'
   });
 
   try {
@@ -33,6 +33,7 @@ async function unifiedClientExample() {
   console.log('\n=== Unified Client Usage ===\n');
   
   // Create a client with shared authentication
+  // Versions default to newest if not specified
   const client = new PromoStandards.PromoStandardsClient({
     username: 'myuser',
     password: 'mypass',
@@ -40,12 +41,10 @@ async function unifiedClientExample() {
     autoInitialize: true,
     services: {
       inventory: {
-        wsdl: 'https://example.com/inventory/wsdl',
-        version: '2.0.0'
+        wsdl: 'https://example.com/inventory/wsdl'
       },
       productData: {
-        wsdl: 'https://example.com/product/wsdl',
-        version: '2.0.0'
+        wsdl: 'https://example.com/product/wsdl'
       }
     }
   });
@@ -72,15 +71,15 @@ async function unifiedClientExample() {
 // Example 3: Quick one-off call
 async function quickCallExample() {
   console.log('\n=== Quick Call Example ===\n');
-  
+
   try {
+    // Version defaults to newest if not specified
     const result = await PromoStandards.PromoStandardsClient.quickCall({
       service: 'inventory',
       operation: 'getInventoryLevels',
       wsdl: 'https://example.com/inventory/wsdl',
       username: 'myuser',
       password: 'mypass',
-      version: '2.0.0',
       data: {
         productId: 'XYZ789',
         filters: {
@@ -165,12 +164,11 @@ async function lazyDiscoveryExample() {
 // Example 6: Error handling
 async function errorHandlingExample() {
   console.log('\n=== Error Handling Example ===\n');
-  
+
   const inventory = new PromoStandards.InventoryService({
     wsdl: 'https://example.com/inventory/wsdl',
     username: 'myuser',
-    password: 'mypass',
-    version: '2.0.0'
+    password: 'mypass'
   });
 
   try {
