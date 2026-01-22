@@ -1,26 +1,29 @@
+require('dotenv').config();
 const PromoStandards = require('../src/index');
 
-// Example 1: Basic usage with per-vendor credentials
+// Load HIT credentials from .env
+// Create a .env file with:
+//   HIT_VENDOR_CODE=your_hit_code
+//   HIT_USERNAME=your_username
+//   HIT_PASSWORD=your_password
+const hit = {
+  code: process.env.HIT_VENDOR_CODE,
+  username: process.env.HIT_USERNAME,
+  password: process.env.HIT_PASSWORD
+};
+
+// Example 1: Basic usage with HIT
 async function basicExample() {
   console.log('=== Basic Usage ===\n');
 
-  // Create client with OneSource (no credentials at client level)
   const client = new PromoStandards.PromoStandardsClient({
     onesource: {}
   });
 
-  // Vendor credentials (typically from your database)
-  const vendor = {
-    code: 'SUPPLIER_ID',
-    username: 'vendor_user',
-    password: 'vendor_pass'
-  };
-
   try {
-    // WSDL is auto-discovered, version defaults to newest
-    const result = await client.inventory(vendor.code, {
-      username: vendor.username,
-      password: vendor.password
+    const result = await client.inventory(hit.code, {
+      username: hit.username,
+      password: hit.password
     }).getInventoryLevels({
       productId: 'ABC123'
     });
@@ -31,40 +34,31 @@ async function basicExample() {
   }
 }
 
-// Example 2: Querying multiple vendors
-async function multiVendorExample() {
-  console.log('\n=== Multi-Vendor Usage ===\n');
+// Example 2: Get product data from HIT
+async function productDataExample() {
+  console.log('\n=== Product Data ===\n');
 
   const client = new PromoStandards.PromoStandardsClient({
     onesource: {}
   });
 
-  // Simulate vendors from database
-  const vendors = [
-    { code: 'VENDOR_A', username: 'user_a', password: 'pass_a' },
-    { code: 'VENDOR_B', username: 'user_b', password: 'pass_b' },
-    { code: 'VENDOR_C', username: 'user_c', password: 'pass_c' }
-  ];
-
   try {
-    for (const vendor of vendors) {
-      const result = await client.productData(vendor.code, {
-        username: vendor.username,
-        password: vendor.password
-      }).getProduct({
-        productId: 'PROD-001',
-        localizationCountry: 'US',
-        localizationLanguage: 'en'
-      });
+    const result = await client.productData(hit.code, {
+      username: hit.username,
+      password: hit.password
+    }).getProduct({
+      productId: 'ABC123',
+      localizationCountry: 'US',
+      localizationLanguage: 'en'
+    });
 
-      console.log(`Product from ${vendor.code}:`, result);
-    }
+    console.log('Product:', JSON.stringify(result, null, 2));
   } catch (error) {
     console.error('Error:', error.message);
   }
 }
 
-// Example 3: Using different services for same vendor
+// Example 3: Using multiple services
 async function multiServiceExample() {
   console.log('\n=== Multi-Service Usage ===\n');
 
@@ -72,22 +66,16 @@ async function multiServiceExample() {
     onesource: {}
   });
 
-  const vendor = {
-    code: 'SUPPLIER_ID',
-    username: 'vendor_user',
-    password: 'vendor_pass'
-  };
-
-  const creds = { username: vendor.username, password: vendor.password };
+  const creds = { username: hit.username, password: hit.password };
 
   try {
     // Get inventory
-    const inventory = await client.inventory(vendor.code, creds)
+    const inventory = await client.inventory(hit.code, creds)
       .getInventoryLevels({ productId: 'ABC123' });
     console.log('Inventory:', inventory);
 
     // Get product details
-    const product = await client.productData(vendor.code, creds)
+    const product = await client.productData(hit.code, creds)
       .getProduct({
         productId: 'ABC123',
         localizationCountry: 'US',
@@ -96,7 +84,7 @@ async function multiServiceExample() {
     console.log('Product:', product);
 
     // Get pricing
-    const pricing = await client.pricingConfig(vendor.code, creds)
+    const pricing = await client.pricingConfig(hit.code, creds)
       .getConfigurationAndPricing({
         productId: 'ABC123',
         currency: 'USD',
@@ -118,9 +106,9 @@ async function quickCallExample() {
     const result = await PromoStandards.PromoStandardsClient.quickCall({
       service: 'inventory',
       operation: 'getInventoryLevels',
-      supplierId: 'SUPPLIER_ID',
-      username: 'vendor_user',
-      password: 'vendor_pass',
+      supplierId: hit.code,
+      username: hit.username,
+      password: hit.password,
       onesource: {},
       data: {
         productId: 'XYZ789'
@@ -143,7 +131,7 @@ async function errorHandlingExample() {
 
   // Test: Missing credentials
   try {
-    client.inventory('SUPPLIER_ID');  // No credentials provided
+    client.inventory(hit.code);  // No credentials provided
   } catch (error) {
     if (error instanceof PromoStandards.ValidationError) {
       console.log('Caught missing credentials:', error.message);
@@ -152,9 +140,9 @@ async function errorHandlingExample() {
 
   // Test: Missing required field
   try {
-    await client.inventory('SUPPLIER_ID', {
-      username: 'user',
-      password: 'pass'
+    await client.inventory(hit.code, {
+      username: hit.username,
+      password: hit.password
     }).getInventoryLevels({
       // Missing required productId
       filters: { colors: ['Red'] }
@@ -183,8 +171,8 @@ async function directWsdlExample() {
   try {
     // If you already know the WSDL URL, pass it directly
     const result = await client.inventory('https://supplier.com/inventory.wsdl', {
-      username: 'myuser',
-      password: 'mypass'
+      username: hit.username,
+      password: hit.password
     }).getInventoryLevels({
       productId: 'ABC123'
     });
@@ -198,11 +186,20 @@ async function directWsdlExample() {
 // Run examples
 async function runExamples() {
   console.log('PromoStandards JavaScript Client Examples\n');
-  console.log('Note: Replace SUPPLIER_ID with actual vendor codes\n');
+
+  if (!hit.code || !hit.username || !hit.password) {
+    console.log('Please create a .env file with HIT credentials:');
+    console.log('  HIT_VENDOR_CODE=your_hit_code');
+    console.log('  HIT_USERNAME=your_username');
+    console.log('  HIT_PASSWORD=your_password\n');
+    return;
+  }
+
+  console.log(`Using HIT vendor: ${hit.code}\n`);
 
   // Uncomment to run examples:
   // await basicExample();
-  // await multiVendorExample();
+  // await productDataExample();
   // await multiServiceExample();
   // await quickCallExample();
   // await errorHandlingExample();
