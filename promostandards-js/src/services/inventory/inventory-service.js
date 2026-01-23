@@ -158,7 +158,13 @@ class InventoryService extends BaseService {
   static responseValidators = {
     getInventoryLevels: (response) => {
       // After normalizeJsonResponse, all keys are camelCase
-      if (!response.inventory && !response.inventoryLevels) {
+      // Different vendors/versions use different response structures:
+      // - V1.2.1 (Hit): Reply with ProductVariationInventoryArray
+      // - V2.0.0: inventory or inventoryLevels
+      if (!response.inventory &&
+          !response.inventoryLevels &&
+          !response.productVariationInventoryArray &&
+          !response.productID) {
         throw new Error('Invalid response: missing inventory data');
       }
       return response;

@@ -191,18 +191,22 @@ class SoapClient {
    */
   extractSoapBody(json) {
     // Handle various response structures
-    const envelope = json['soap:Envelope'] || json['SOAP-ENV:Envelope'] || json['soapenv:Envelope'] || json.Envelope;
+    // Note: XmlConverter normalizes keys to camelCase, so we check both original and normalized names
+    const envelope = json['soap:Envelope'] || json['SOAP-ENV:Envelope'] || json['soapenv:Envelope'] ||
+                     json.Envelope || json.envelope;
     if (!envelope) {
       return json;
     }
 
-    const body = envelope['soap:Body'] || envelope['SOAP-ENV:Body'] || envelope['soapenv:Body'] || envelope.Body;
+    const body = envelope['soap:Body'] || envelope['SOAP-ENV:Body'] || envelope['soapenv:Body'] ||
+                 envelope.Body || envelope.body;
     if (!body) {
       return envelope;
     }
 
     // Return the first child element of Body (the response element)
-    const keys = Object.keys(body).filter(k => !k.startsWith('$'));
+    // Filter out namespace attributes which start with 'xmlns'
+    const keys = Object.keys(body).filter(k => !k.startsWith('$') && !k.startsWith('xmlns'));
     if (keys.length > 0) {
       return body[keys[0]];
     }
