@@ -59,9 +59,10 @@ class SoapClient {
   async call(operation, requestData, options = {}) {
     await this.initialize();
 
-    // PromoStandards uses PascalCase element names (GetInventoryLevelsRequest)
-    // but the soap library generates camelCase (getInventoryLevelsRequest)
-    // So we use raw XML requests to ensure correct element names
+    // PromoStandards uses different element names depending on the service/version:
+    // - Some use PascalCase + Request suffix (e.g., GetProductRequest)
+    // - Others use just "Request" (e.g., Inventory 1.2.1)
+    // The element name can be overridden via options.elementName
 
     try {
       debug(`Calling operation: ${operation}`, requestData);
@@ -69,8 +70,10 @@ class SoapClient {
       const namespace = await this.getNamespace();
       const endpoint = this.getEndpoint();
 
-      // Build the request element name (PascalCase + Request suffix)
-      const requestElementName = this.toPascalCase(operation) + 'Request';
+      // Use provided element name or try to detect from WSDL, fallback to PascalCase+Request
+      const requestElementName = options.elementName ||
+        this.getElementNameFromWsdl(operation) ||
+        this.toPascalCase(operation) + 'Request';
 
       // Build the XML body with proper namespacing
       const xmlBody = this.buildRequestXml(requestData, requestElementName, namespace);
@@ -255,6 +258,51 @@ class SoapClient {
    */
   toPascalCase(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  /**
+   * Get the element name for an operation from the parsed WSDL
+   * Returns null if not found
+   */
+  getElementNameFromWsdl(operation) {
+    if (!this._client || !this._client.wsdl) {
+      return null;
+    }
+
+    try {
+      const wsdl = this._client.wsdl;
+      const definitions = wsdl.definitions;
+
+      // Look for the message that corresponds to this operation's input
+      // Message names are typically like "getInventoryLevelsRequest"
+      const messageName = operation + 'Request';
+      const message = definitions.messages[messageName];
+
+      if (message && message.parts) {
+        // The part should have an element attribute
+        for (const partName in message.parts) {
+          const part = message.parts[partName];
+          if (part.element) {
+            // element is like "{namespace}Request" - extract just the element name
+            const elementMatch = part.element.match(/\}(.+)$/);
+            if (elementMatch) {
+              debug(`Found element name from WSDL: ${elementMatch[1]} for operation ${operation}`);
+              return elementMatch[1];
+            }
+            // If no namespace prefix, use as-is
+            if (!part.element.includes('{')) {
+              debug(`Found element name from WSDL: ${part.element} for operation ${operation}`);
+              return part.element;
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debug('Error getting element name from WSDL:', e.message);
+      return null;
+    }
   }
 
   /**

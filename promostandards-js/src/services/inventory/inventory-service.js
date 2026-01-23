@@ -18,7 +18,10 @@ class InventoryService extends BaseService {
 
   async getInventoryLevels(params = {}) {
     const requestData = this.buildInventoryRequest(params);
-    return this.call(this.operations.getInventoryLevels, requestData);
+    // V1.2.1 uses element name "Request" per the official WSDL
+    // V2.0.0 uses "GetInventoryLevelsRequest"
+    const options = this.version === '1.2.1' ? { elementName: 'Request' } : {};
+    return this.call(this.operations.getInventoryLevels, requestData, options);
   }
 
   async getFilterValues(params = {}) {
@@ -45,39 +48,45 @@ class InventoryService extends BaseService {
   }
 
   buildV1Request(params) {
-    const request = {
-      productId: params.productId || params.productID,
-      Filter: {}
-    };
+    // V1.2.1 uses specific field names per the official XSD:
+    // - productID (not productId)
+    // - productIDtype (required)
+    // - FilterColorArray, FilterSizeArray, FilterSelectionArray (not Filter)
+    const productId = params.productId || params.productID;
 
-    if (!request.productId) {
+    if (!productId) {
       throw new ValidationError(
         'productId is required for getInventoryLevels',
         { version: '1.2.1' }
       );
     }
 
-    if (params.partIdArray || params.partIds) {
-      request.Filter.partIdArray = {
-        partId: Array.isArray(params.partIdArray || params.partIds) 
-          ? (params.partIdArray || params.partIds) 
-          : [params.partIdArray || params.partIds]
+    const request = {
+      productID: productId,
+      productIDtype: params.productIDtype || params.productIdType || 'Supplier'
+    };
+
+    // FilterColorArray
+    if (params.filterColors || params.colors || params.partColors || params.partColorArray) {
+      const colors = params.filterColors || params.colors || params.partColors || params.partColorArray;
+      request.FilterColorArray = {
+        filterColor: Array.isArray(colors) ? colors : [colors]
       };
     }
 
-    if (params.labelSizeArray || params.labelSizes) {
-      request.Filter.LabelSizeArray = {
-        labelSize: Array.isArray(params.labelSizeArray || params.labelSizes)
-          ? (params.labelSizeArray || params.labelSizes)
-          : [params.labelSizeArray || params.labelSizes]
+    // FilterSizeArray
+    if (params.filterSizes || params.sizes || params.labelSizes || params.labelSizeArray) {
+      const sizes = params.filterSizes || params.sizes || params.labelSizes || params.labelSizeArray;
+      request.FilterSizeArray = {
+        filterSize: Array.isArray(sizes) ? sizes : [sizes]
       };
     }
 
-    if (params.partColorArray || params.partColors) {
-      request.Filter.PartColorArray = {
-        partColor: Array.isArray(params.partColorArray || params.partColors)
-          ? (params.partColorArray || params.partColors)
-          : [params.partColorArray || params.partColors]
+    // FilterSelectionArray (generic filter)
+    if (params.filterSelections || params.partIds || params.partIdArray) {
+      const selections = params.filterSelections || params.partIds || params.partIdArray;
+      request.FilterSelectionArray = {
+        filterSelection: Array.isArray(selections) ? selections : [selections]
       };
     }
 

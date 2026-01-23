@@ -184,32 +184,51 @@ describe('InventoryService', () => {
         .toThrow('productId is required');
     });
 
-    it('should build v1 request with partIdArray', () => {
+    it('should build v1 request with productID and productIDtype per official XSD', () => {
+      const request = service.buildV1Request({
+        productId: 'ABC123'
+      });
+
+      // V1.2.1 uses productID (not productId) and requires productIDtype
+      expect(request.productID).toBe('ABC123');
+      expect(request.productIDtype).toBe('Supplier'); // Default
+    });
+
+    it('should build v1 request with FilterSelectionArray for partIds', () => {
       const request = service.buildV1Request({
         productId: 'ABC123',
         partIds: ['PART-001', 'PART-002']
       });
 
-      expect(request.productId).toBe('ABC123');
-      expect(request.Filter.partIdArray.partId).toEqual(['PART-001', 'PART-002']);
+      expect(request.productID).toBe('ABC123');
+      expect(request.FilterSelectionArray.filterSelection).toEqual(['PART-001', 'PART-002']);
     });
 
-    it('should build v1 request with labelSizeArray', () => {
+    it('should build v1 request with FilterSizeArray', () => {
       const request = service.buildV1Request({
         productId: 'ABC123',
-        labelSizes: ['M', 'L']
+        filterSizes: ['M', 'L']
       });
 
-      expect(request.Filter.LabelSizeArray.labelSize).toEqual(['M', 'L']);
+      expect(request.FilterSizeArray.filterSize).toEqual(['M', 'L']);
     });
 
-    it('should build v1 request with partColorArray', () => {
+    it('should build v1 request with FilterColorArray', () => {
       const request = service.buildV1Request({
         productId: 'ABC123',
-        partColors: ['Red', 'Blue']
+        filterColors: ['Red', 'Blue']
       });
 
-      expect(request.Filter.PartColorArray.partColor).toEqual(['Red', 'Blue']);
+      expect(request.FilterColorArray.filterColor).toEqual(['Red', 'Blue']);
+    });
+
+    it('should accept custom productIDtype', () => {
+      const request = service.buildV1Request({
+        productId: 'ABC123',
+        productIDtype: 'Distributor'
+      });
+
+      expect(request.productIDtype).toBe('Distributor');
     });
   });
 
