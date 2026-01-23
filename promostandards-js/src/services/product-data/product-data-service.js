@@ -46,16 +46,14 @@ class ProductDataService extends BaseService {
 
   async getProductSellable(params = {}) {
     const request = {
-      productId: params.productId || params.productID,
       localizationCountry: params.localizationCountry || params.country || 'US',
       localizationLanguage: params.localizationLanguage || params.language || 'en'
     };
 
-    if (!request.productId) {
-      throw new ValidationError(
-        'productId is required for getProductSellable',
-        { method: 'getProductSellable' }
-      );
+    // productId is optional - if omitted, returns ALL sellable products
+    const productId = params.productId || params.productID;
+    if (productId) {
+      request.productId = productId;
     }
 
     if (params.partId || params.partID) {
@@ -64,7 +62,7 @@ class ProductDataService extends BaseService {
 
     if (this.version === '2.0.0') {
       request.isSellable = params.isSellable !== undefined ? params.isSellable : true;
-      
+
       if (params.productIdType) {
         request.productIDtype = params.productIdType;
       }
