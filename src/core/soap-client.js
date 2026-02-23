@@ -193,22 +193,29 @@ class SoapClient {
     // Handle various response structures
     // Note: XmlConverter normalizes keys to camelCase, so we check both original and normalized names
     const envelope = json['soap:Envelope'] || json['SOAP-ENV:Envelope'] || json['soapenv:Envelope'] ||
-                     json.Envelope || json.envelope;
+                     json.Envelope || json.envelope || json['s:Envelope'];
     if (!envelope) {
       return json;
     }
 
     const body = envelope['soap:Body'] || envelope['SOAP-ENV:Body'] || envelope['soapenv:Body'] ||
-                 envelope.Body || envelope.body;
+                 envelope.Body || envelope.body || envelope['s:Body'];
     if (!body) {
       return envelope;
     }
 
     // Return the first child element of Body (the response element)
     // Filter out namespace attributes which start with 'xmlns'
-    const keys = Object.keys(body).filter(k => !k.startsWith('$') && !k.startsWith('xmlns'));
-    if (keys.length > 0) {
-      return body[keys[0]];
+    const keys = Object.keys(body).filter(k => !k.startsWith('$') && !k.startsWith('xmlns') && k !== 'xsi' && k !== 'xsd');
+    if (keys.length === 1) {
+      // Preserve the wrapper key name (e.g., Product, ProductSellableArray)
+      // so validators can check response.product, response.productSellableArray, etc.
+      const key = keys[0];
+      // Convert key to camelCase to match validator expectations
+      const camelKey = key.charAt(0).toLowerCase() + key.slice(1);
+      return { [camelKey]: body[key] };
+    } else if (keys.length > 1) {
+      return body;
     }
 
     return body;

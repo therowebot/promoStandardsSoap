@@ -44,11 +44,27 @@ class XmlConverter {
     }
 
     if (_.isObject(data) && !_.isDate(data)) {
+      // Handle objects with empty string key containing text content (xml2js mergeAttrs format)
+      // e.g., { "": "actualValue", "xmlns": "http://..." } should return "actualValue"
+      const keys = Object.keys(data);
+      if (keys.includes('') && typeof data[''] === 'string') {
+        const nonMetaKeys = keys.filter(k => k !== '' && k !== 'xmlns' && !k.startsWith('xmlns'));
+        if (nonMetaKeys.length === 0) {
+          // All other keys are namespace-related, extract the text value
+          return this.normalizeJsonResponse(data['']);
+        }
+      }
+
       const normalized = {};
-      
+
       for (const [key, value] of Object.entries(data)) {
+        // Skip empty string keys and xmlns attributes at this level
+        if (key === '' || key === 'xmlns' || key.startsWith('xmlns')) {
+          continue;
+        }
+
         const normalizedKey = this.normalizeKey(key);
-        
+
         if (value === '') {
           normalized[normalizedKey] = null;
         } else if (value === 'true' || value === 'false') {
@@ -62,10 +78,10 @@ class XmlConverter {
           normalized[normalizedKey] = value;
         }
       }
-      
+
       return normalized;
     }
-    
+
     return data;
   }
 
