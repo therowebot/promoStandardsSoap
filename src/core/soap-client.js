@@ -208,10 +208,14 @@ class SoapClient {
     // Filter out namespace attributes which start with 'xmlns'
     const keys = Object.keys(body).filter(k => !k.startsWith('$') && !k.startsWith('xmlns') && k !== 'xsi' && k !== 'xsd');
     if (keys.length === 1) {
-      // Preserve the wrapper key name (e.g., Product, ProductSellableArray)
-      // so validators can check response.product, response.productSellableArray, etc.
       const key = keys[0];
-      // Convert key to camelCase to match validator expectations
+      // If the element is a "Response" wrapper (e.g., GetProductSellableResponse),
+      // unwrap it and return its contents directly
+      if (key.endsWith('Response')) {
+        return body[key];
+      }
+      // Otherwise preserve the wrapper key name (e.g., Product)
+      // so validators can check response.product
       const camelKey = key.charAt(0).toLowerCase() + key.slice(1);
       return { [camelKey]: body[key] };
     } else if (keys.length > 1) {
