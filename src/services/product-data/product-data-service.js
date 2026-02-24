@@ -117,8 +117,36 @@ class ProductDataService extends BaseService {
     );
   }
 
+  static extractServiceMessage(response) {
+    // Check for ServiceMessageArray in response (vendor error messages)
+    const messageArray = response.serviceMessageArray || response.ServiceMessageArray;
+    if (!messageArray) return null;
+
+    // Handle both array and single message
+    const messages = messageArray.serviceMessage || messageArray.ServiceMessage || messageArray;
+    if (!messages) return null;
+
+    const messageList = Array.isArray(messages) ? messages : [messages];
+    if (messageList.length === 0) return null;
+
+    // Extract code and description from first message
+    const msg = messageList[0];
+    const code = msg.code || msg.Code;
+    const description = msg.description || msg.Description;
+
+    if (code || description) {
+      return { code, description, messages: messageList };
+    }
+    return null;
+  }
+
   static responseValidators = {
     getProduct: (response) => {
+      // Check for vendor error messages first
+      const serviceMsg = ProductDataService.extractServiceMessage(response);
+      if (serviceMsg && !response.product) {
+        throw new Error(`Vendor error ${serviceMsg.code}: ${serviceMsg.description}`);
+      }
       // After normalizeJsonResponse, all keys are camelCase
       if (!response.product) {
         throw new Error('Invalid response: missing product data');
@@ -127,6 +155,11 @@ class ProductDataService extends BaseService {
     },
 
     getProductDateModified: (response) => {
+      // Check for vendor error messages first
+      const serviceMsg = ProductDataService.extractServiceMessage(response);
+      if (serviceMsg && !response.productDateModifiedArray) {
+        throw new Error(`Vendor error ${serviceMsg.code}: ${serviceMsg.description}`);
+      }
       // After normalizeJsonResponse, all keys are camelCase
       if (!response.productDateModifiedArray) {
         throw new Error('Invalid response: missing productDateModifiedArray');
@@ -135,6 +168,11 @@ class ProductDataService extends BaseService {
     },
 
     getProductSellable: (response) => {
+      // Check for vendor error messages first
+      const serviceMsg = ProductDataService.extractServiceMessage(response);
+      if (serviceMsg && !response.productSellableArray) {
+        throw new Error(`Vendor error ${serviceMsg.code}: ${serviceMsg.description}`);
+      }
       // After normalizeJsonResponse, all keys are camelCase
       if (!response.productSellableArray) {
         throw new Error('Invalid response: missing productSellableArray');
@@ -143,6 +181,11 @@ class ProductDataService extends BaseService {
     },
 
     getProductCloseOut: (response) => {
+      // Check for vendor error messages first
+      const serviceMsg = ProductDataService.extractServiceMessage(response);
+      if (serviceMsg && !response.productCloseOutArray) {
+        throw new Error(`Vendor error ${serviceMsg.code}: ${serviceMsg.description}`);
+      }
       // After normalizeJsonResponse, all keys are camelCase
       if (!response.productCloseOutArray) {
         throw new Error('Invalid response: missing productCloseOutArray');
