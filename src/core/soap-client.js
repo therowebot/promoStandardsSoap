@@ -75,8 +75,17 @@ class SoapClient {
         this.getElementNameFromWsdl(operation) ||
         this.toPascalCase(operation) + 'Request';
 
+      // PromoStandards convention: the request envelope element lives in the
+      // service namespace (e.g., ".../ProductDataService/2.0.0/"), but its
+      // child elements (wsVersion, id, password, productId, …) live in the
+      // SharedObjects sub-namespace (".../ProductDataService/2.0.0/SharedObjects/").
+      // Some vendors (SanMar) enforce this strictly; sending children under
+      // the service namespace yields an XSD validation fault. Derive the
+      // child namespace from the service namespace.
+      const childNamespace = this.deriveChildNamespace(namespace);
+
       // Build the XML body with proper namespacing
-      const xmlBody = this.buildRequestXml(requestData, requestElementName, namespace);
+      const xmlBody = this.buildRequestXml(requestData, requestElementName, namespace, childNamespace);
 
       // Build full SOAP envelope
       const soapEnvelope = this.buildSoapEnvelope(xmlBody, namespace);
@@ -128,14 +137,28 @@ class SoapClient {
   }
 
   /**
-   * Build XML for request data
+   * Build XML for request data.
+   *
+   * The request envelope element (e.g. `<ns:GetProductRequest>`) uses
+   * `nsPrefix` mapped to the service namespace. Child elements are emitted
+   * with `childPrefix` mapped to the SharedObjects namespace where
+   * applicable — see the call() comment for why this matters.
+   *
+   * When `childNamespace` is null or equal to the service namespace, both
+   * prefixes collapse to one and we fall back to the original behaviour
+   * (everything under the service namespace).
    */
-  buildRequestXml(data, elementName, namespace) {
+  buildRequestXml(data, elementName, namespace, childNamespace) {
     const nsPrefix = 'ns';
-    let xml = `<${nsPrefix}:${elementName} xmlns:${nsPrefix}="${namespace}">`;
+    const useShared = childNamespace && childNamespace !== namespace;
+    const childPrefix = useShared ? 'shr' : nsPrefix;
+
+    let xml = `<${nsPrefix}:${elementName} xmlns:${nsPrefix}="${namespace}"`;
+    if (useShared) xml += ` xmlns:${childPrefix}="${childNamespace}"`;
+    xml += '>';
 
     for (const [key, value] of Object.entries(data)) {
-      xml += this.valueToXml(key, value, nsPrefix);
+      xml += this.valueToXml(key, value, childPrefix);
     }
 
     xml += `</${nsPrefix}:${elementName}>`;
@@ -143,7 +166,9 @@ class SoapClient {
   }
 
   /**
-   * Convert a value to XML
+   * Convert a value to XML using the given namespace prefix for the element
+   * itself. Nested objects/arrays inherit the same prefix (PromoStandards
+   * keeps shared-object descendants in the same namespace).
    */
   valueToXml(key, value, nsPrefix) {
     if (value === null || value === undefined) {
@@ -174,6 +199,22 @@ class SoapClient {
       .replace(/'/g, '&apos;');
 
     return `<${nsPrefix}:${tagName}>${escaped}</${nsPrefix}:${tagName}>`;
+  }
+
+  /**
+   * Derive the SharedObjects child namespace from a service namespace.
+   * Examples:
+   *   ".../ProductDataService/2.0.0/" → ".../ProductDataService/2.0.0/SharedObjects/"
+   *   ".../PricingAndConfiguration/1.0.0/" → ".../PricingAndConfiguration/1.0.0/SharedObjects/"
+   *
+   * Returns the input unchanged when it doesn't end in a version directory
+   * — defensive fallback for non-conforming WSDLs.
+   */
+  deriveChildNamespace(namespace) {
+    if (typeof namespace !== 'string' || !namespace.length) return namespace;
+    // Service NSes always end in a trailing slash after the version number.
+    if (namespace.endsWith('/')) return `${namespace}SharedObjects/`;
+    return `${namespace}/SharedObjects/`;
   }
 
   /**

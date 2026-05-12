@@ -51,31 +51,32 @@ class PricingConfigurationService extends BaseService {
       );
     }
 
+    // PPC 1.0.0 schema requires elements in this exact order after the
+    // auth header (wsVersion, id, password):
+    //   productId → partId? → currency → fobId → priceType →
+    //   localizationCountry → localizationLanguage → configurationType
+    // currency/fobId/priceType/configurationType are required (no
+    // minOccurs="0"), so we validate up front and emit them in spec order
+    // — strict vendors (SanMar) reject any other ordering or omission.
+    const missing = ['currency', 'fobId', 'priceType', 'configurationType']
+      .filter((k) => params[k] === undefined || params[k] === null || params[k] === '');
+    if (missing.length) {
+      throw new ValidationError(
+        `Missing required PPC fields: ${missing.join(', ')}`,
+        { method: 'getConfigurationAndPricing', missing }
+      );
+    }
+
     const request = {
-      productId: params.productId,
-      localizationCountry: params.localizationCountry || params.country || 'US',
-      localizationLanguage: params.localizationLanguage || params.language || 'en'
+      productId: params.productId
     };
-
-    if (params.partId) {
-      request.partId = params.partId;
-    }
-
-    if (params.currency) {
-      request.currency = params.currency;
-    }
-
-    if (params.fobId) {
-      request.fobId = params.fobId;
-    }
-
-    if (params.priceType) {
-      request.priceType = params.priceType;
-    }
-
-    if (params.configurationType) {
-      request.configurationType = params.configurationType;
-    }
+    if (params.partId) request.partId = params.partId;
+    request.currency = params.currency;
+    request.fobId = params.fobId;
+    request.priceType = params.priceType;
+    request.localizationCountry = params.localizationCountry || params.country || 'US';
+    request.localizationLanguage = params.localizationLanguage || params.language || 'en';
+    request.configurationType = params.configurationType;
 
     return this.call(this.operations.getConfigurationAndPricing, request);
   }

@@ -7,18 +7,25 @@ class ProductDataService extends BaseService {
   static defaultVersion = '2.0.0';
 
   async getProduct(params = {}) {
-    const request = {
-      productId: params.productId || params.productID,
-      localizationCountry: params.localizationCountry || params.country || 'US',
-      localizationLanguage: params.localizationLanguage || params.language || 'en'
-    };
-
-    if (!request.productId) {
+    // PromoStandards getProduct schema (2.0.0) requires elements in this
+    // exact order after the auth header (wsVersion, id, password):
+    //   localizationCountry → localizationLanguage → productId → productIDtype
+    // SanMar enforces the ordering strictly via XSD validation and rejects
+    // any other ordering with a SAXParseException. Keep this object literal
+    // in spec order — auth.injectAuth() prepends the auth fields.
+    const productId = params.productId || params.productID;
+    if (!productId) {
       throw new ValidationError(
         'productId is required for getProduct',
         { method: 'getProduct' }
       );
     }
+
+    const request = {
+      localizationCountry: params.localizationCountry || params.country || 'US',
+      localizationLanguage: params.localizationLanguage || params.language || 'en',
+      productId
+    };
 
     if (this.version === '2.0.0' && params.productIdType) {
       request.productIDtype = params.productIdType;
